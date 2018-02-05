@@ -134,7 +134,7 @@ def main() -> int:
     # main_task = create_tasks()
     arguments = parse_cmdline_arguments(sys.argv[1:])
 
-    log_dir = '~/log/magneticod'
+    log_dir = '%s/log/magneticod'%os.environ['HOME']
     if not os.path.isdir(log_dir):
         os.makedirs(log_dir)
     logging.basicConfig(level=logging.INFO,

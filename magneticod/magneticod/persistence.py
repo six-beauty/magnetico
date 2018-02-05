@@ -18,6 +18,7 @@ import time
 import typing
 import os
 import redis
+import traceback
 
 from magneticod import bencode
 
@@ -54,9 +55,9 @@ class Database:
                     CREATE TABLE IF NOT EXISTS `torrents` (
                         `id` INT(11) NOT NULL AUTO_INCREMENT,
                         `info_hash` VARCHAR(64) NOT NULL COLLATE 'utf8mb4_unicode_ci',
-                        `name` TEXT NOT NULL COLLATE 'utf8mb4_unicode_ci',
-                        `total_size` INT(11) NOT NULL DEFAULT '0',
                         `discovered_on` INT(11) NOT NULL DEFAULT '0',
+                        `total_size` BIGINT(20) NOT NULL DEFAULT '0',
+                        `name` TEXT NOT NULL COLLATE 'utf8mb4_unicode_ci',
                         PRIMARY KEY (`id`),
                         UNIQUE INDEX `info_hash` (`info_hash`),
                         INDEX `discovered_on_index` (`discovered_on`)
@@ -67,11 +68,12 @@ class Database:
             db_cur.execute(
                     '''
                     CREATE TABLE IF NOT EXISTS `torrent_files` (
-                        `id` INT(11) NOT NULL,
+                        `id` INT(11) NOT NULL AUTO_INCREMENT,
                         `torrent_id` INT(11) NOT NULL DEFAULT '0',
-                        `size` INT(11) NOT NULL,
+                        `size` BIGINT(20) NOT NULL,
                         `path` TEXT NOT NULL COLLATE 'utf8mb4_unicode_ci',
-                        PRIMARY KEY (`id`)
+                        PRIMARY KEY (`id`),
+                        INDEX `torrent_id_index` (`torrent_id`)
                         )COLLATE='utf8mb4_unicode_ci' ENGINE=InnoDB;
                     '''
                     )
@@ -118,15 +120,16 @@ class Database:
                     # Refuse trailing slash in any of the path items
                     assert not any(b"/" in item for item in file[b"path"])
                     path = "/".join(i.decode("utf-8") for i in file[b"path"])
-                    files.append((torrent_id, MySQLdb.escape_string(info_hash), file[b"length"], MySQLdb.escape_string(path) ))
+                    files.append((torrent_id, file[b"length"], path))
             else:  # Single File torrent:
                 assert type(info[b"length"]) is int
-                files.append((torrent_id, MySQLdb.escape_string(info_hash), info[b"length"], MySQLdb.escape_string(name) ))
+                files.append((torrent_id, info[b"length"], name))
         # TODO: Make sure this catches ALL, AND ONLY operational errors
         except (bencode.BencodeDecodingError, AssertionError, KeyError, AttributeError, UnicodeDecodeError, TypeError):
+            logging.error('add_metadata exception, %s', traceback.format_exc())
             return False
 
-        self.__pending_metadata.append((torrent_id, MySQLdb.escape_string(info_hash), MySQLdb.escape_string(name), sum(f[2] for f in files), discovered_on))
+        self.__pending_metadata.append((torrent_id, info_hash, sum(f[1] for f in files), discovered_on, name))
         # MYPY BUG: error: Argument 1 to "__iadd__" of "list" has incompatible type List[Tuple[bytes, Any, str]];
         #     expected Iterable[Tuple[bytes, int, bytes]]
         # List is an Iterable man...
@@ -136,7 +139,7 @@ class Database:
 
         # Automatically check if the buffer is full, and commit to the SQLite database if so.
         #if len(self.__pending_metadata) >= PENDING_INFO_HASHES:
-        if len(self.__pending_metadata) >= 2:
+        if len(self.__pending_metadata) >= 1:
             self.__commit_metadata()
 
         return True
@@ -149,13 +152,14 @@ class Database:
         try:
             #redis缓存
             hash_id = self.__redis_conn.get('ih:'+info_hash)
+            if hash_id:
+                return False
 
             #mysql
             cur.execute("SELECT count(info_hash), id FROM torrents where info_hash = %s;", [info_hash])
             x, torrent_id = cur.fetchone()
-            if x > 0:
-                #超时了，重新set 缓存
-                self.__redis_conn.setex('ih:'+info_hash, 86400, torrent_id)
+            #超时了，重新set 缓存
+            self.__redis_conn.setex('ih:'+info_hash, 86400, torrent_id or 1)
 
             return x == 0
         finally:
@@ -164,11 +168,10 @@ class Database:
     def __commit_metadata(self) -> None:
         cur = self.__db_conn.cursor()
 
-        cur.execute("BEGIN;")
         # noinspection PyBroadException
         try:
             cur.executemany(
-                "INSERT INTO torrents (id, info_hash, name, total_size, discovered_on) VALUES (%s, %s, %s, %s, %s);",
+                "INSERT INTO torrents (id, info_hash, total_size, discovered_on, name) VALUES (%s, %s, %s, %s, %s);",
                 self.__pending_metadata
             )
             cur.executemany(
