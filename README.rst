@@ -1,6 +1,11 @@
 =========
 magnetico
 =========
+1. 修改存储为mysql db， 需提前建库， 在magn.cfg指定db
+2. 添加默认配置, 默认路径 ~/.local/share/magneticod/magn.cfg。初次启动会生成默认配置。
+
+
+---
 *Autonomous (self-hosted) BitTorrent DHT search engine suite.*
 
 .. image:: https://badges.gitter.im/gitterHQ/gitter.png
