@@ -15,12 +15,14 @@
 import argparse
 import asyncio
 import logging
+import logging.handlers
 import ipaddress
 import textwrap
 import urllib.parse
 import os
 import sys
 import typing
+import json
 
 import appdirs
 import humanfriendly
@@ -92,10 +94,10 @@ def parse_cmdline_arguments(args: typing.List[str]) -> typing.Optional[argparse.
         help="Limit metadata size to protect memory overflow. Provide in human friendly format eg. 1 M, 1 GB"
     )
 
-    default_database_dir = os.path.join(appdirs.user_data_dir("magneticod"), "database.sqlite3")
+    default_cfg_file = os.path.join(appdirs.user_data_dir("magneticod"), "magn.cfg")
     parser.add_argument(
-        "--database-file", type=str, default=default_database_dir,
-        help="Path to database file (default: {})".format(humanfriendly.format_path(default_database_dir))
+        "--cfg-file", type=str, default=default_cfg_file,
+        help="Path to cfg file (default: {})".format(humanfriendly.format_path(default_cfg_file))
     )
     parser.add_argument(
         '-d', '--debug',
@@ -104,13 +106,55 @@ def parse_cmdline_arguments(args: typing.List[str]) -> typing.Optional[argparse.
     )
     return parser.parse_args(args)
 
+def magn_cfg(cfg_file) -> typing.Optional[dict]:
+    #no exists, set default
+    if not os.path.isfile(cfg_file):
+        cfg = {}
+        cfg['mysql'] = {"host":"127.0.0.1", "port":3306, "user":'root', "passwd":'123456', "db":"magnetic"}
+        cfg['redis'] = {"host":"127.0.0.1", "port":52021, "passwd":'sany'}
+        h_cfg = open(cfg_file, 'w')
+        h_cfg.write(json.dumps(cfg, sort_keys=True, indent=4))
+        h_cfg.close()
+
+    h_cfg = open(cfg_file, 'r')
+    cfg_str = h_cfg.read()
+    try:
+        cfg_info = json.loads(cfg_str)
+    except Exception as e:
+        logging.error('magn_cfg decode fail, file:%s, err:%s', cfg_file, e)
+        return None
+
+    if not 'mysql' in cfg_info or not 'redis' in cfg_info:
+        logging.error('magn_cfg cfg err:%s, file:%s', cfg_str, cfg_file)
+        return None
+
+    return cfg_info
 
 def main() -> int:
     # main_task = create_tasks()
     arguments = parse_cmdline_arguments(sys.argv[1:])
 
-    logging.basicConfig(level=arguments.loglevel, format="%(asctime)s  %(levelname)-8s  %(message)s")
+    log_dir = '~/log/magneticod'
+    if not os.path.isdir(log_dir):
+        os.makedirs(log_dir)
+    logging.basicConfig(level=logging.INFO,
+        format='[%(asctime)s %(name)-12s %(levelname)-s] %(message)s',
+        datefmt='%m-%d %H:%M:%S',
+        #filename=time.strftime('log/dump_analyze.log'),
+        filemode='a')
+    htimed = logging.handlers.TimedRotatingFileHandler("%s/magneticod.log"%(log_dir), 'D', 1, 0)
+    htimed.suffix = "%Y%m%d-%H%M"
+    htimed.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(asctime)s %(name)-12s %(levelname)-s] %(message)s', datefmt='%m-%d %H:%M:%S')
+    htimed.setFormatter(formatter)
+    #day time split log file
+    logging.getLogger('').addHandler(htimed)
     logging.info("magneticod v%d.%d.%d started", *__version__)
+
+    cfg_args =magn_cfg(arguments.cfg_file)
+    if not cfg_args:
+        logging.warning('magn_cfg decode cfg fail')
+        return 1
 
     # use uvloop if it's installed
     try:
@@ -123,7 +167,7 @@ def main() -> int:
 
     # noinspection PyBroadException
     try:
-        database = persistence.Database(arguments.database_file)
+        database = persistence.Database(cfg_args['mysql'], cfg_args['redis'])
     except:
         logging.exception("could NOT connect to the database!")
         return 1
