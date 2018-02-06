@@ -89,7 +89,7 @@ class Database:
         if torrent_init == 0:
             #redis数据可能被清空，从数据库读出，重新写入
             cur = self.__db_conn.cursor()
-            cur.execute('SELECT id from torrents order by id  limit 1;')
+            cur.execute('SELECT id from torrents order by id desc limit 1;')
             res = cur.fetchone()
             if res:
                 torrent_id = res[0] 
@@ -112,7 +112,7 @@ class Database:
             info = bencode.loads(metadata)
 
             assert b"/" not in info[b"name"]
-            name = info[b"name"].decode("utf-8")
+            name = info[b"name"].decode('utf-8')
 
             if b"files" in info:  # Multiple File torrent:
                 for file in info[b"files"]:
@@ -138,8 +138,7 @@ class Database:
         logging.info("Added: `%s`, info_hash:%s", name, info_hash)
 
         # Automatically check if the buffer is full, and commit to the SQLite database if so.
-        #if len(self.__pending_metadata) >= PENDING_INFO_HASHES:
-        if len(self.__pending_metadata) >= 1:
+        if len(self.__pending_metadata) >= PENDING_INFO_HASHES:
             self.__commit_metadata()
 
         return True
@@ -181,13 +180,15 @@ class Database:
             cur.execute("COMMIT;")
             logging.info("%d metadata (%d files) are committed to the database.",
                           len(self.__pending_metadata), len(self.__pending_files))
-            self.__pending_metadata.clear()
-            self.__pending_files.clear()
         except:
             cur.execute("ROLLBACK;")
             logging.exception("Could NOT commit metadata to the database! (%d metadata are pending)",
                               len(self.__pending_metadata))
         finally:
+            #fail, clear metadata
+            self.__pending_metadata.clear()
+            self.__pending_files.clear()
+
             cur.close()
 
     def close(self) -> None:
