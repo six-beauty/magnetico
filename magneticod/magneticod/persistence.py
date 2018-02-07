@@ -60,7 +60,8 @@ class Database:
                         `name` TEXT NOT NULL COLLATE 'utf8mb4_unicode_ci',
                         PRIMARY KEY (`id`),
                         UNIQUE INDEX `info_hash` (`info_hash`),
-                        INDEX `discovered_on_index` (`discovered_on`)
+                        INDEX `discovered_on_index` (`discovered_on`),
+                        FULLTEXT INDEX `name_fulltext` (`name`)
                         )COLLATE='utf8mb4_unicode_ci' ENGINE=InnoDB;
                     '''
                     )

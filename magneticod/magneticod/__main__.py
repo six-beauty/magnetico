@@ -131,9 +131,6 @@ def magn_cfg(cfg_file) -> typing.Optional[dict]:
     return cfg_info
 
 def main() -> int:
-    # main_task = create_tasks()
-    arguments = parse_cmdline_arguments(sys.argv[1:])
-
     log_dir = '%s/log/magneticod'%os.environ['HOME']
     if not os.path.isdir(log_dir):
         os.makedirs(log_dir)
@@ -150,6 +147,9 @@ def main() -> int:
     #day time split log file
     logging.getLogger('').addHandler(htimed)
     logging.info("magneticod v%d.%d.%d started", *__version__)
+
+    # main_task = create_tasks()
+    arguments = parse_cmdline_arguments(sys.argv[1:])
 
     cfg_args =magn_cfg(arguments.cfg_file)
     if not cfg_args:
