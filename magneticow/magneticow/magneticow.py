@@ -16,8 +16,9 @@ import collections
 import datetime as dt
 from datetime import datetime
 import logging
-import sqlite3
+import MySQLdb
 import os
+import redis
 
 import appdirs
 import flask
@@ -35,16 +36,29 @@ app.config.from_object(__name__)
 
 # TODO: We should have been able to use flask.g but it does NOT persist across different requests so we resort back to
 # this. Investigate the cause and fix it (I suspect of Gevent).
-magneticod_db = None
+magneticod_mysql = None
+magneticod_redis = None
 
 @app.route("/")
 @requires_auth
 def home_page():
-    with magneticod_db:
-        # COUNT(ROWID) is much more inefficient since it scans the whole table, so use MAX(ROWID)
-        cur = magneticod_db.execute("SELECT MAX(ROWID) FROM torrents ;")
-        n_torrents = cur.fetchone()[0] or 0
+    global magneticod_mysql, magneticod_redis
+    with magneticod_mysql:
+        #缓存 homepage torrents 总行数
+        n_torrents = magneticod_redis.get('hp_torrents')
 
+        if not n_torrents:
+            # COUNT(ROWID) is much more inefficient since it scans the whole table, so use MAX(ROWID)
+            cur = magneticod_mysql.cursor()
+            cur.execute("SELECT MAX(`id`) FROM torrents ;")
+            n_torrents = cur.fetchone()[0] or 0
+            cur.close()
+
+            #10 mins 刷新一次
+            magneticod_redis.setex('hp_torrents', 600, n_torrents)
+
+        #byte to int
+        n_torrents = int(n_torrents)
     return flask.render_template("homepage.html", n_torrents=n_torrents)
 
 
@@ -59,27 +73,6 @@ def torrents():
         "page": page
     }
 
-    SQL_query = """
-        SELECT
-            info_hash,
-            name,
-            total_size,
-            discovered_on
-        FROM torrents
-    """
-    if search:
-        SQL_query += """
-            INNER JOIN (
-                SELECT docid AS id, rank(matchinfo(fts_torrents, 'pcnxal')) AS rank
-                FROM fts_torrents
-                WHERE name MATCH ?
-            ) AS ranktable USING(id)
-        """
-    SQL_query += """
-        ORDER BY {}
-        LIMIT 20 OFFSET ?
-    """
-
     sort_by = flask.request.args.get("sort_by")
     allowed_sorts = [
         None,
@@ -93,23 +86,19 @@ def torrents():
     if sort_by not in allowed_sorts:
         return flask.Response("Invalid value for `sort_by! (Allowed values are %s)" % (allowed_sorts, ), 400)
 
+    SQL_query = "SELECT info_hash, name, total_size, discovered_on FROM `torrents` "
     if search:
-        if sort_by:
-            SQL_query = SQL_query.format(sort_by + ", " + "rank ASC")
-        else:
-            SQL_query = SQL_query.format("rank ASC")
-    else:
-        if sort_by:
-            SQL_query = SQL_query.format(sort_by + ", " + "id DESC")
-        else:
-            SQL_query = SQL_query.format("id DESC")
+        SQL_query += "WHERE MATCH(`name`) AGAINST('{0}' IN BOOLEAN MODE) ".format(search)
 
-    with magneticod_db:
-        if search:
-            cur = magneticod_db.execute(SQL_query, (search, 20 * page))
-        else:
-            cur = magneticod_db.execute(SQL_query, (20 * page, ))
-        context["torrents"] = [Torrent(t[0].hex(), t[1], utils.to_human_size(t[2]),
+    if sort_by:
+        SQL_query += "ORDER BY {0} LIMIT {1}, 20 ".format(sort_by + ", " + "`id` DESC", 20 * page)
+    else:
+        SQL_query += "ORDER BY {0} LIMIT {1}, 20 ".format("`id` DESC", 20 * page)
+
+    with magneticod_mysql:
+        cur = magneticod_mysql.cursor()
+        cur.execute(SQL_query)
+        context["torrents"] = [Torrent(t[0], t[1], utils.to_human_size(t[2]),
                                        datetime.fromtimestamp(t[3]).strftime("%d/%m/%Y"), [])
                                for t in cur.fetchall()]
 
@@ -135,13 +124,14 @@ def torrents():
 @requires_auth
 def torrent_redirect(**kwargs):
     try:
-        info_hash = bytes.fromhex(kwargs["info_hash"])
+        info_hash = kwargs["info_hash"]
         assert len(info_hash) == 20
     except (AssertionError, ValueError):  # In case info_hash variable is not a proper hex-encoded bytes
         return flask.abort(400)
 
-    with magneticod_db:
-        cur = magneticod_db.execute("SELECT name FROM torrents WHERE info_hash=? LIMIT 1;", (info_hash,))
+    with magneticod_mysql:
+        cur = magneticod_mysql.cursor()
+        cur.execute("SELECT name FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
         try:
             name = cur.fetchone()[0]
         except TypeError:  # In case no results returned, TypeError will be raised when we try to subscript None object
@@ -156,25 +146,25 @@ def torrent(**kwargs):
     context = {}
 
     try:
-        info_hash = bytes.fromhex(kwargs["info_hash"])
-        assert len(info_hash) == 20
+        info_hash = kwargs["info_hash"]
+        assert len(info_hash) == 40
     except (AssertionError, ValueError):  # In case info_hash variable is not a proper hex-encoded bytes
         return flask.abort(400)
 
-    with magneticod_db:
-        cur = magneticod_db.execute("SELECT id, name, discovered_on FROM torrents WHERE info_hash=? LIMIT 1;",
-                                    (info_hash,))
+    with magneticod_mysql:
+        cur = magneticod_mysql.cursor()
+        cur.execute("SELECT id, name, discovered_on FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
         try:
             torrent_id, name, discovered_on = cur.fetchone()
         except TypeError:  # In case no results returned, TypeError will be raised when we try to subscript None object
             return flask.abort(404)
 
-        cur = magneticod_db.execute("SELECT path, size FROM files WHERE torrent_id=?;", (torrent_id,))
+        cur.execute("SELECT path, size FROM torrent_files WHERE torrent_id=%s;"%(torrent_id,))
         raw_files = cur.fetchall()
         size = sum(f[1] for f in raw_files)
         files = [File(f[0], utils.to_human_size(f[1])) for f in raw_files]
 
-    context["torrent"] = Torrent(info_hash.hex(), name, utils.to_human_size(size), datetime.fromtimestamp(discovered_on).strftime("%d/%m/%Y"), files)
+    context["torrent"] = Torrent(info_hash, name, utils.to_human_size(size), datetime.fromtimestamp(discovered_on).strftime("%d/%m/%Y"), files)
 
     return flask.render_template("torrent.html", **context)
 
@@ -190,18 +180,15 @@ def statistics():
     # solution for the current users. But in the meanwhile, be aware that all your calculations will be a bit lousy,
     # though within tolerable limits for a torrent search engine.
 
-    with magneticod_db:
+    with magneticod_mysql:
         # latest_today is the latest UNIX timestamp of today, the very last second.
         latest_today = int((dt.date.today() + dt.timedelta(days=1) - dt.timedelta(seconds=1)).strftime("%s"))
         # Retrieve all the torrents discovered in the past 30 days (30 days * 24 hours * 60 minutes * 60 seconds...)
         # Also, see http://www.sqlite.org/lang_datefunc.html for details of `date()`.
         #     Function          Equivalent strftime()
         #     date(...) 		strftime('%Y-%m-%d', ...)
-        cur = magneticod_db.execute(
-            "SELECT date(discovered_on, 'unixepoch') AS day, count() FROM torrents WHERE discovered_on >= ? "
-            "GROUP BY day;",
-            (latest_today - 30 * 24 * 60 * 60, )
-        )
+        cur = magneticod_mysql.cursor()
+        cur.execute("SELECT FROM_UNIXTIME(discovered_on, '{0}') AS day, count(`id`) FROM torrents WHERE discovered_on >= {1} GROUP BY day;".format('%Y-%m-%d', latest_today - 30 * 24 * 60 * 60, ))
         results = cur.fetchall()  # for instance, [('2017-04-01', 17428), ('2017-04-02', 28342)]
 
     return flask.render_template("statistics.html", **{
@@ -231,65 +218,55 @@ def feed():
 
     if filter_:
         context["title"] = "`%s` - magneticow" % (filter_,)
-        with magneticod_db:
-            cur = magneticod_db.execute(
-                "SELECT "
-                "    name, "
-                "    info_hash "
-                "FROM torrents "
-                "INNER JOIN ("
-                "    SELECT docid AS id, rank(matchinfo(fts_torrents, 'pcnxal')) AS rank "
-                "    FROM fts_torrents "
-                "    WHERE name MATCH ? "
-                "    ORDER BY rank ASC"
-                "    LIMIT 50"
-                ") AS ranktable USING(id);",
-                (filter_, )
+        with magneticod_mysql:
+            cur = magneticod_mysql.cursor()
+            cur.execute(
+                '''
+                SELECT name, info_hash FROM torrents where match(`name`) against('{0}' in boolean mode) ORDER BY id DESC LIMIT 50;
+                '''.format(filter_, )
             )
-            context["items"] = [{"title": r[0], "info_hash": r[1].hex()} for r in cur]
+            context["items"] = [{"title": r[0], "info_hash": r[1]} for r in cur]
     else:
         context["title"] = "The Newest Torrents - magneticow"
-        with magneticod_db:
-            cur = magneticod_db.execute(
-                "SELECT "
-                "    name, "
-                "    info_hash "
-                "FROM torrents "
-                "ORDER BY id DESC LIMIT 50"
-            )
-            context["items"] = [{"title": r[0], "info_hash": r[1].hex()} for r in cur]
+        with magneticod_mysql:
+            cur = magneticod_mysql.cursor()
+            cur.execute('SELECT name, info_hash FROM torrents ORDER BY `id` DESC LIMIT 50;')
+            context["items"] = [{"title": r[0], "info_hash": r[1]} for r in cur]
 
     return flask.render_template("feed.xml", **context), 200, {"Content-Type": "application/rss+xml; charset=utf-8"}
 
 
-def initialize_magneticod_db() -> None:
-    global magneticod_db
+def initialize_magneticod_db(mysql_cfg, redis_cfg) -> None:
+    global magneticod_mysql, magneticod_redis
 
     logging.info("Connecting to magneticod's database...")
 
-    magneticod_db_path = os.path.join(appdirs.user_data_dir("magneticod"), "database.sqlite3")
-    magneticod_db = sqlite3.connect(magneticod_db_path, isolation_level=None)
+    if not mysql_cfg['host'] or not mysql_cfg['port'] or not mysql_cfg['user'] or not mysql_cfg['passwd'] or not mysql_cfg['db']:
+        logging.error('Database init fail, args host:%s, port:%s, user:%s, pwd:%s, db:%s', 
+                mysql_cfg['host'], mysql_cfg['port'], mysql_cfg['user'], mysql_cfg['passwd'], mysql_cfg['db'])
+        raise Exception('Database init fail')
+
+    magneticod_mysql = MySQLdb.connect(host=mysql_cfg['host'], port=mysql_cfg['port'], user=mysql_cfg['user'], passwd=mysql_cfg['passwd'], db=mysql_cfg['db'], charset='utf8')
 
     logging.info("Preparing for the full-text search (this might take a while)...")
-    with magneticod_db:
-        magneticod_db.execute("PRAGMA journal_mode=WAL;")
+    '''
+    with magneticod_mysql:
 
-        magneticod_db.execute("CREATE INDEX IF NOT EXISTS discovered_on_index ON torrents (discovered_on);")
-        magneticod_db.execute("CREATE INDEX IF NOT EXISTS info_hash_index ON torrents (info_hash);")
-        magneticod_db.execute("CREATE INDEX IF NOT EXISTS file_info_hash_index ON files (torrent_id);")
+        magneticod_mysql.execute("CREATE VIRTUAL TABLE temp.fts_torrents USING fts4(name);")
+        magneticod_mysql.execute("INSERT INTO fts_torrents (docid, name) SELECT id, name FROM torrents;")
+        magneticod_mysql.execute("INSERT INTO fts_torrents (fts_torrents) VALUES ('optimize');")
 
-        magneticod_db.execute("CREATE VIRTUAL TABLE temp.fts_torrents USING fts4(name);")
-        magneticod_db.execute("INSERT INTO fts_torrents (docid, name) SELECT id, name FROM torrents;")
-        magneticod_db.execute("INSERT INTO fts_torrents (fts_torrents) VALUES ('optimize');")
-
-        magneticod_db.execute("CREATE TEMPORARY TRIGGER on_torrents_insert AFTER INSERT ON torrents FOR EACH ROW BEGIN"
+        magneticod_mysql.execute("CREATE TEMPORARY TRIGGER on_torrents_insert AFTER INSERT ON torrents FOR EACH ROW BEGIN"
                               "    INSERT INTO fts_torrents (docid, name) VALUES (NEW.id, NEW.name);"
                               "END;")
+    magneticod_mysql.create_function("rank", 1, utils.rank)
+    '''
 
-    magneticod_db.create_function("rank", 1, utils.rank)
+    magneticod_redis = redis.StrictRedis(host=redis_cfg['host'], port=redis_cfg['port'], password=redis_cfg['passwd'])
+    magneticod_redis.time()
 
 
 def close_db() -> None:
     logging.info("Closing magneticod database...")
-    if magneticod_db is not None:
-        magneticod_db.close()
+    if magneticod_mysql is not None:
+        magneticod_mysql.close()
