@@ -55,6 +55,7 @@ def magn_cfg(cfg_file) -> typing.Optional[dict]:
 
 def main() -> int:
     log_dir = '%s/log/magneticow'%os.environ['HOME']
+    #log_dir = '/home/sany/log/magneticow'
     if not os.path.isdir(log_dir):
         os.makedirs(log_dir)
     logging.basicConfig(level=logging.INFO,

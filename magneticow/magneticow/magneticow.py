@@ -68,6 +68,11 @@ def torrents():
     search = flask.request.args.get("search")
     page = int(flask.request.args.get("page", 0))
 
+    #防域名屏蔽
+    if '国产' in search or '学生' in search:
+        if 'tomatow.top' in flask.request.url:
+            return flask.redirect("http://121.196.207.196:5001/torrents?search=%s&page=%s"%(search, page), 301)
+
     context = {
         "search": search,
         "page": page
@@ -188,7 +193,7 @@ def statistics():
         #     Function          Equivalent strftime()
         #     date(...) 		strftime('%Y-%m-%d', ...)
         cur = magneticod_mysql.cursor()
-        cur.execute("SELECT FROM_UNIXTIME(discovered_on, '{0}') AS day, count(`id`) FROM torrents WHERE discovered_on >= {1} GROUP BY day;".format('%Y-%m-%d', latest_today - 30 * 24 * 60 * 60, ))
+        cur.execute("SELECT FROM_UNIXTIME(discovered_on, '{0}') AS day, count(`id`) FROM torrents WHERE discovered_on >= {1} GROUP BY day;".format('%Y-%m-%d', latest_today - 7 * 24 * 60 * 60, ))
         results = cur.fetchall()  # for instance, [('2017-04-01', 17428), ('2017-04-02', 28342)]
 
     return flask.render_template("statistics.html", **{
