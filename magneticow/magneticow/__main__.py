@@ -79,8 +79,9 @@ def main() -> int:
         return 1
 
     magneticow.app.arguments = arguments
+    magneticow.app.logger.addHandler(htimed)
 
-    http_server = gevent.wsgi.WSGIServer((arguments.host, arguments.port), magneticow.app)
+    http_server = gevent.wsgi.WSGIServer((arguments.host, arguments.port), magneticow.app, log=magneticow.app.logger)
 
     magneticow.initialize_magneticod_db(cfg_args['mysql'], cfg_args['redis'])
 
