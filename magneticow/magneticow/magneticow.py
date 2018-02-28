@@ -26,7 +26,6 @@ import flask
 from magneticow import utils
 from magneticow.authorization import requires_auth, generate_feed_hash
 
-
 File = collections.namedtuple("file", ["path", "size"])
 Torrent = collections.namedtuple("torrent", ["info_hash", "name", "size", "discovered_on", "files"])
 
@@ -61,6 +60,11 @@ def home_page():
         n_torrents = int(n_torrents)
     return flask.render_template("homepage.html", n_torrents=n_torrents)
 
+@app.route("/redpack")
+@requires_auth
+def red_pack():
+    return flask.render_template("redpack.html")
+
 
 @app.route("/torrents/")
 @requires_auth
@@ -69,9 +73,9 @@ def torrents():
     page = int(flask.request.args.get("page", 0))
 
     #防域名屏蔽
-    if '国产' in search or '学生' in search:
-        if 'tomatow.top' in flask.request.url:
-            return flask.redirect("http://121.196.207.196:5001/torrents?search=%s&page=%s"%(search, page), 301)
+    #if '国产' in search or '学生' in search:
+    if 'tomatow.top' in flask.request.url:
+        return flask.redirect("http://121.196.207.196:5001/torrents?search=%s&page=%s"%(search, page), 301)
 
     context = {
         "search": search,
@@ -134,6 +138,10 @@ def torrent_redirect(**kwargs):
     except (AssertionError, ValueError):  # In case info_hash variable is not a proper hex-encoded bytes
         return flask.abort(400)
 
+    #防域名屏蔽
+    if 'tomatow.top' in flask.request.url:
+        return flask.redirect("http://121.196.207.196:5001/torrents/%s/"%(info_hash), 301)
+
     with magneticod_mysql:
         cur = magneticod_mysql.cursor()
         cur.execute("SELECT name FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
@@ -153,8 +161,13 @@ def torrent(**kwargs):
     try:
         info_hash = kwargs["info_hash"]
         assert len(info_hash) == 40
+        name = kwargs["name"]
     except (AssertionError, ValueError):  # In case info_hash variable is not a proper hex-encoded bytes
         return flask.abort(400)
+
+    #防域名屏蔽
+    if 'tomatow.top' in flask.request.url:
+        return flask.redirect("http://121.196.207.196:5001/torrents/%s/%s/"%(info_hash, name), 301)
 
     with magneticod_mysql:
         cur = magneticod_mysql.cursor()

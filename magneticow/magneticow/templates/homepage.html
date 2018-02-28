@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>tomatow</title>
+    <title>Tomatow 磁力搜索</title>
+    <meta name="keywords" content="magnetic,tomatow,番茄web,番茄,磁力链接,种子站,种子,小电影,电影,豆瓣,搜索" />
+    <meta name="description" content="tomatow.top 磁力链接搜索引擎" />
+
+    <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href=" {{ url_for('static', filename='styles/reset.css') }} ">
     <link rel="stylesheet" href=" {{ url_for('static', filename='styles/essential.css') }} ">
     <link rel="stylesheet" href=" {{ url_for('static', filename='styles/homepage.css') }} ">
@@ -12,7 +17,7 @@
 <main>
     <div><b>tomato<sup>w</sup></b>&#8203;<sub>(pre-alpha)</sub></div>
     <form action="/torrents" method="get" autocomplete="off" role="search">
-        <input type="search" name="search" placeholder="Search the BitTorrent DHT" autofocus>
+        <input type="search" name="search" placeholder="输入关键字, 按回车搜索磁力链接" autofocus>
     </form>
 </main>
 
@@ -30,6 +35,7 @@
     </div>
 
     ~{{ "{:,}".format(n_torrents) }} torrents available (see the <a href="/statistics">statistics</a>).
+    <a style="float:right" href="/redpack">~领支付宝红包，支持表妹</a>
 </footer>
 </body>
 </html>
