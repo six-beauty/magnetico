@@ -48,10 +48,14 @@ def home_page():
 
         if not n_torrents:
             # COUNT(ROWID) is much more inefficient since it scans the whole table, so use MAX(ROWID)
-            cur = magneticod_mysql.cursor()
-            cur.execute("SELECT MAX(`id`) FROM torrents ;")
-            n_torrents = cur.fetchone()[0] or 0
-            cur.close()
+            try:
+                cur = magneticod_mysql.cursor()
+                cur.execute("SELECT MAX(`id`) FROM torrents ;")
+                n_torrents = cur.fetchone()[0] or 0
+                cur.close()
+            except (AttributeError, MySQLdb.OperationalError):
+                magneticod_mysql = MySQLdb.connect()
+                n_torrents = 0
 
             #10 mins 刷新一次
             magneticod_redis.setex('hp_torrents', 600, n_torrents)
@@ -69,6 +73,7 @@ def red_pack():
 @app.route("/torrents/")
 @requires_auth
 def torrents():
+    global magneticod_mysql, magneticod_redis
     search = flask.request.args.get("search")
     page = int(flask.request.args.get("page", 0))
 
@@ -105,11 +110,16 @@ def torrents():
         SQL_query += "ORDER BY {0} LIMIT {1}, 20 ".format("`id` DESC", 20 * page)
 
     with magneticod_mysql:
-        cur = magneticod_mysql.cursor()
-        cur.execute(SQL_query)
-        context["torrents"] = [Torrent(t[0], t[1], utils.to_human_size(t[2]),
-                                       datetime.fromtimestamp(t[3]).strftime("%d/%m/%Y"), [])
-                               for t in cur.fetchall()]
+        try:
+            cur = magneticod_mysql.cursor()
+            cur.execute(SQL_query)
+            context["torrents"] = [Torrent(t[0], t[1], utils.to_human_size(t[2]),
+                                           datetime.fromtimestamp(t[3]).strftime("%d/%m/%Y"), [])
+                                   for t in cur.fetchall()]
+            
+        except (AttributeError, MySQLdb.OperationalError):
+            magneticod_mysql = MySQLdb.connect()
+            context["torrents"] = []
 
     if len(context["torrents"]) < 20:
         context["next_page_exists"] = False
@@ -132,6 +142,7 @@ def torrents():
 @app.route("/torrents/<info_hash>/", defaults={"name": None})
 @requires_auth
 def torrent_redirect(**kwargs):
+    global magneticod_mysql, magneticod_redis
     try:
         info_hash = kwargs["info_hash"]
         assert len(info_hash) == 20
@@ -143,8 +154,13 @@ def torrent_redirect(**kwargs):
         return flask.redirect("http://121.196.207.196:5001/torrents/%s/"%(info_hash), 301)
 
     with magneticod_mysql:
-        cur = magneticod_mysql.cursor()
-        cur.execute("SELECT name FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
+        try:
+            cur = magneticod_mysql.cursor()
+            cur.execute("SELECT name FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
+        except (AttributeError, MySQLdb.OperationalError):
+            magneticod_mysql = MySQLdb.connect()
+            return flask.abort(404)
+
         try:
             name = cur.fetchone()[0]
         except TypeError:  # In case no results returned, TypeError will be raised when we try to subscript None object
@@ -156,6 +172,7 @@ def torrent_redirect(**kwargs):
 @app.route("/torrents/<info_hash>/<name>")
 @requires_auth
 def torrent(**kwargs):
+    global magneticod_mysql, magneticod_redis
     context = {}
 
     try:
@@ -170,15 +187,24 @@ def torrent(**kwargs):
         return flask.redirect("http://121.196.207.196:5001/torrents/%s/%s/"%(info_hash, name), 301)
 
     with magneticod_mysql:
-        cur = magneticod_mysql.cursor()
-        cur.execute("SELECT id, name, discovered_on FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
+        try:
+            cur = magneticod_mysql.cursor()
+            cur.execute("SELECT id, name, discovered_on FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
+        except (AttributeError, MySQLdb.OperationalError):
+            magneticod_mysql = MySQLdb.connect()
+            return flask.abort(404)
         try:
             torrent_id, name, discovered_on = cur.fetchone()
         except TypeError:  # In case no results returned, TypeError will be raised when we try to subscript None object
             return flask.abort(404)
 
-        cur.execute("SELECT path, size FROM torrent_files WHERE torrent_id=%s;"%(torrent_id,))
-        raw_files = cur.fetchall()
+        try:
+            cur.execute("SELECT path, size FROM torrent_files WHERE torrent_id=%s;"%(torrent_id,))
+            raw_files = cur.fetchall()
+        except (AttributeError, MySQLdb.OperationalError):
+            magneticod_mysql = MySQLdb.connect()
+            return flask.abort(404)
+
         size = sum(f[1] for f in raw_files)
         files = [File(f[0], utils.to_human_size(f[1])) for f in raw_files]
 
@@ -198,6 +224,7 @@ def statistics():
     # solution for the current users. But in the meanwhile, be aware that all your calculations will be a bit lousy,
     # though within tolerable limits for a torrent search engine.
 
+    global magneticod_mysql, magneticod_redis
     with magneticod_mysql:
         # latest_today is the latest UNIX timestamp of today, the very last second.
         latest_today = int((dt.date.today() + dt.timedelta(days=1) - dt.timedelta(seconds=1)).strftime("%s"))
@@ -218,6 +245,7 @@ def statistics():
 
 @app.route("/feed")
 def feed():
+    global magneticod_mysql, magneticod_redis
     filter_ = flask.request.args["filter"]
     # Check for all possible users who might be requesting.
     # pylint disabled: because we do monkey-patch! [in magneticow.__main__.py:main()]
