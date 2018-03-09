@@ -64,12 +64,6 @@ def home_page():
         n_torrents = int(n_torrents)
     return flask.render_template("homepage.html", n_torrents=n_torrents)
 
-@app.route("/redpack")
-@requires_auth
-def red_pack():
-    return flask.render_template("redpack.html")
-
-
 @app.route("/torrents/")
 @requires_auth
 def torrents():
