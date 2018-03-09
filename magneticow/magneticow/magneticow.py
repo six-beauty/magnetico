@@ -80,7 +80,7 @@ def torrents():
     #防域名屏蔽
     #if '国产' in search or '学生' in search:
     if 'tomatow.top' in flask.request.url:
-        return flask.redirect("http://121.196.207.196:5001/torrents?search=%s&page=%s"%(search, page), 301)
+        return flask.redirect("http://121.196.207.196:5002/torrents?search=%s&page=%s"%(search, page), 301)
 
     context = {
         "search": search,
@@ -151,7 +151,7 @@ def torrent_redirect(**kwargs):
 
     #防域名屏蔽
     if 'tomatow.top' in flask.request.url:
-        return flask.redirect("http://121.196.207.196:5001/torrents/%s/"%(info_hash), 301)
+        return flask.redirect("http://121.196.207.196:5002/torrents/%s/"%(info_hash), 301)
 
     with magneticod_mysql:
         try:
@@ -184,7 +184,7 @@ def torrent(**kwargs):
 
     #防域名屏蔽
     if 'tomatow.top' in flask.request.url:
-        return flask.redirect("http://121.196.207.196:5001/torrents/%s/%s/"%(info_hash, name), 301)
+        return flask.redirect("http://121.196.207.196:5002/torrents/%s/%s/"%(info_hash, name), 301)
 
     with magneticod_mysql:
         try:
