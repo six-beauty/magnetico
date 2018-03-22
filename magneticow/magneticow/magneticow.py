@@ -19,6 +19,7 @@ import logging
 import MySQLdb
 import os
 import redis
+import traceback
 
 import appdirs
 import flask
@@ -54,6 +55,7 @@ def home_page():
                 n_torrents = cur.fetchone()[0] or 0
                 cur.close()
             except (AttributeError, MySQLdb.OperationalError):
+                logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
                 magneticod_mysql = MySQLdb.connect()
                 n_torrents = 0
 
@@ -112,6 +114,7 @@ def torrents():
                                    for t in cur.fetchall()]
             
         except (AttributeError, MySQLdb.OperationalError):
+            logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
             magneticod_mysql = MySQLdb.connect()
             context["torrents"] = []
 
@@ -152,6 +155,7 @@ def torrent_redirect(**kwargs):
             cur = magneticod_mysql.cursor()
             cur.execute("SELECT name FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
         except (AttributeError, MySQLdb.OperationalError):
+            logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
             magneticod_mysql = MySQLdb.connect()
             return flask.abort(404)
 
@@ -185,6 +189,7 @@ def torrent(**kwargs):
             cur = magneticod_mysql.cursor()
             cur.execute("SELECT id, name, discovered_on FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
         except (AttributeError, MySQLdb.OperationalError):
+            logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
             magneticod_mysql = MySQLdb.connect()
             return flask.abort(404)
         try:
@@ -196,6 +201,7 @@ def torrent(**kwargs):
             cur.execute("SELECT path, size FROM torrent_files WHERE torrent_id=%s;"%(torrent_id,))
             raw_files = cur.fetchall()
         except (AttributeError, MySQLdb.OperationalError):
+            logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
             magneticod_mysql = MySQLdb.connect()
             return flask.abort(404)
 

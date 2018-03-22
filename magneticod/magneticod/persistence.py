@@ -34,6 +34,7 @@ class Database:
                     mysql_cfg['host'], mysql_cfg['port'], mysql_cfg['user'], mysql_cfg['passwd'], mysql_cfg['db'])
             raise Exception('Database init fail')
 
+        self.host, self.port, self.user, self.passwd, self.db = mysql_cfg['host'], mysql_cfg['port'], mysql_cfg['user'], mysql_cfg['passwd'], mysql_cfg['db']
         self.__db_conn = self.__db_connect(mysql_cfg['host'], mysql_cfg['port'], mysql_cfg['user'], mysql_cfg['passwd'], mysql_cfg['db'])
 
         self.__redis_conn = self.__redis_connect(redis_cfg['host'], redis_cfg['port'], redis_cfg['passwd'])
@@ -148,27 +149,33 @@ class Database:
         info_hash = info_hash.hex()
         if info_hash in [x[1] for x in self.__pending_metadata]:
             return False
-        cur = self.__db_conn.cursor()
-        try:
-            #redis缓存
-            hash_id = self.__redis_conn.get('ih:'+info_hash)
-            if hash_id:
-                return False
 
-            #mysql
+        #redis缓存
+        hash_id = self.__redis_conn.get('ih:'+info_hash)
+        if hash_id:
+            return False
+
+        try:
+            cur = self.__db_conn.cursor()
             cur.execute("SELECT count(info_hash), id FROM torrents where info_hash = %s;", [info_hash])
             x, torrent_id = cur.fetchone()
-            #超时了，重新set 缓存
-            self.__redis_conn.setex('ih:'+info_hash, 86400, torrent_id or 1)
-
-            return x == 0
-        finally:
             cur.close()
+        except (AttributeError, MySQLdb.OperationalError):
+            logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
+            self.__db_conn.close()
+            self.__db_conn = MySQLdb.connect(host=self.host,port=self.port,user=self.user,passwd=self.passwd,db=self.db,charset="utf8")
+            return False
+        except:
+            logging.error('mysql execute err:%s', traceback.format_exc())
+            return False
+
+        #超时了，重新set 缓存
+        self.__redis_conn.setex('ih:'+info_hash, 86400, torrent_id or 1)
+        return x == 0
 
     def __commit_metadata(self) -> None:
-        cur = self.__db_conn.cursor()
-
         # noinspection PyBroadException
+        cur = self.__db_conn.cursor()
         try:
             cur.executemany(
                 "INSERT INTO torrents (id, info_hash, total_size, discovered_on, name) VALUES (%s, %s, %s, %s, %s);",
@@ -181,6 +188,10 @@ class Database:
             cur.execute("COMMIT;")
             logging.info("%d metadata (%d files) are committed to the database.",
                           len(self.__pending_metadata), len(self.__pending_files))
+        except (AttributeError, MySQLdb.OperationalError):
+            logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
+            self.__db_conn.close()
+            self.__db_conn = MySQLdb.connect(host=self.host,port=self.port,user=self.user,passwd=self.passwd,db=self.db,charset="utf8")
         except:
             cur.execute("ROLLBACK;")
             logging.exception("Could NOT commit metadata to the database! (%d metadata are pending)",
