@@ -1,4 +1,4 @@
-svr_port=5002
+svr_port=5001
 cur_dir=$(pwd)
 
 run_status=$(/usr/sbin/lsof -nP -i TCP:$svr_port |grep python)

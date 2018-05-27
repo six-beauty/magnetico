@@ -26,10 +26,14 @@ import flask
 
 from magneticow import utils
 from magneticow.authorization import requires_auth, generate_feed_hash
+from magneticow import sensitive_filter
 
 File = collections.namedtuple("file", ["path", "size"])
 Torrent = collections.namedtuple("torrent", ["info_hash", "name", "size", "discovered_on", "files"])
 
+gfw = sensitive_filter.DFAFilter()
+gfw.parse("./magneticow/data/色情类.txt", ',')
+gfw.parse("./magneticow/data/政治类.txt", ',')
 
 app = flask.Flask(__name__)
 app.config.from_object(__name__)
@@ -38,11 +42,12 @@ app.config.from_object(__name__)
 # this. Investigate the cause and fix it (I suspect of Gevent).
 magneticod_mysql = None
 magneticod_redis = None
+mysql_cnf = None
 
 @app.route("/")
 @requires_auth
 def home_page():
-    global magneticod_mysql, magneticod_redis
+    global magneticod_mysql, magneticod_redis, mysql_cnf
     with magneticod_mysql:
         #缓存 homepage torrents 总行数
         n_torrents = magneticod_redis.get('hp_torrents')
@@ -56,7 +61,7 @@ def home_page():
                 cur.close()
             except (AttributeError, MySQLdb.OperationalError):
                 logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
-                magneticod_mysql = MySQLdb.connect()
+                magneticod_mysql = MySQLdb.connect(host=mysql_cnf['host'], port=mysql_cnf['port'], user=mysql_cnf['user'], passwd=mysql_cnf['passwd'], db=mysql_cnf['db'], charset='utf8')
                 n_torrents = 0
 
             #10 mins 刷新一次
@@ -69,14 +74,14 @@ def home_page():
 @app.route("/torrents/")
 @requires_auth
 def torrents():
-    global magneticod_mysql, magneticod_redis
+    global magneticod_mysql, magneticod_redis, mysql_cnf
     search = flask.request.args.get("search")
     page = int(flask.request.args.get("page", 0))
 
     #防域名屏蔽
     #if '国产' in search or '学生' in search:
     if 'tomatow.top' in flask.request.url:
-        return flask.redirect("http://121.196.207.196:5002/torrents?search=%s&page=%s"%(search, page), 301)
+        return flask.redirect("http://121.196.207.196:5001/torrents?search=%s&page=%s"%(search, page), 301)
 
     context = {
         "search": search,
@@ -109,13 +114,13 @@ def torrents():
         try:
             cur = magneticod_mysql.cursor()
             cur.execute(SQL_query)
-            context["torrents"] = [Torrent(t[0], t[1], utils.to_human_size(t[2]),
+            context["torrents"] = [Torrent(t[0], gfw.filter(t[1]), utils.to_human_size(t[2]),
                                            datetime.fromtimestamp(t[3]).strftime("%d/%m/%Y"), [])
                                    for t in cur.fetchall()]
             
         except (AttributeError, MySQLdb.OperationalError):
             logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
-            magneticod_mysql = MySQLdb.connect()
+            magneticod_mysql = MySQLdb.connect(host=mysql_cnf['host'], port=mysql_cnf['port'], user=mysql_cnf['user'], passwd=mysql_cnf['passwd'], db=mysql_cnf['db'], charset='utf8')
             context["torrents"] = []
 
     if len(context["torrents"]) < 20:
@@ -139,7 +144,7 @@ def torrents():
 @app.route("/torrents/<info_hash>/", defaults={"name": None})
 @requires_auth
 def torrent_redirect(**kwargs):
-    global magneticod_mysql, magneticod_redis
+    global magneticod_mysql, magneticod_redis, mysql_cnf
     try:
         info_hash = kwargs["info_hash"]
         assert len(info_hash) == 20
@@ -148,7 +153,7 @@ def torrent_redirect(**kwargs):
 
     #防域名屏蔽
     if 'tomatow.top' in flask.request.url:
-        return flask.redirect("http://121.196.207.196:5002/torrents/%s/"%(info_hash), 301)
+        return flask.redirect("http://121.196.207.196:5001/torrents/%s/"%(info_hash), 301)
 
     with magneticod_mysql:
         try:
@@ -156,11 +161,12 @@ def torrent_redirect(**kwargs):
             cur.execute("SELECT name FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
         except (AttributeError, MySQLdb.OperationalError):
             logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
-            magneticod_mysql = MySQLdb.connect()
+            magneticod_mysql = MySQLdb.connect(host=mysql_cnf['host'], port=mysql_cnf['port'], user=mysql_cnf['user'], passwd=mysql_cnf['passwd'], db=mysql_cnf['db'], charset='utf8')
             return flask.abort(404)
 
         try:
             name = cur.fetchone()[0]
+            name = gfw.filter(name)
         except TypeError:  # In case no results returned, TypeError will be raised when we try to subscript None object
             return flask.abort(404)
 
@@ -170,7 +176,7 @@ def torrent_redirect(**kwargs):
 @app.route("/torrents/<info_hash>/<name>")
 @requires_auth
 def torrent(**kwargs):
-    global magneticod_mysql, magneticod_redis
+    global magneticod_mysql, magneticod_redis, mysql_cnf
     context = {}
 
     try:
@@ -182,7 +188,7 @@ def torrent(**kwargs):
 
     #防域名屏蔽
     if 'tomatow.top' in flask.request.url:
-        return flask.redirect("http://121.196.207.196:5002/torrents/%s/%s/"%(info_hash, name), 301)
+        return flask.redirect("http://121.196.207.196:5001/torrents/%s/%s/"%(info_hash, name), 301)
 
     with magneticod_mysql:
         try:
@@ -190,10 +196,11 @@ def torrent(**kwargs):
             cur.execute("SELECT id, name, discovered_on FROM torrents WHERE info_hash='%s' LIMIT 1;"%(info_hash,))
         except (AttributeError, MySQLdb.OperationalError):
             logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
-            magneticod_mysql = MySQLdb.connect()
+            magneticod_mysql = MySQLdb.connect(host=mysql_cnf['host'], port=mysql_cnf['port'], user=mysql_cnf['user'], passwd=mysql_cnf['passwd'], db=mysql_cnf['db'], charset='utf8')
             return flask.abort(404)
         try:
             torrent_id, name, discovered_on = cur.fetchone()
+            name = gfw.filter(name)
         except TypeError:  # In case no results returned, TypeError will be raised when we try to subscript None object
             return flask.abort(404)
 
@@ -202,11 +209,11 @@ def torrent(**kwargs):
             raw_files = cur.fetchall()
         except (AttributeError, MySQLdb.OperationalError):
             logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
-            magneticod_mysql = MySQLdb.connect()
+            magneticod_mysql = MySQLdb.connect(host=mysql_cnf['host'], port=mysql_cnf['port'], user=mysql_cnf['user'], passwd=mysql_cnf['passwd'], db=mysql_cnf['db'], charset='utf8')
             return flask.abort(404)
 
         size = sum(f[1] for f in raw_files)
-        files = [File(f[0], utils.to_human_size(f[1])) for f in raw_files]
+        files = [File(gfw.filter(f[0]), utils.to_human_size(f[1])) for f in raw_files]
 
     context["torrent"] = Torrent(info_hash, name, utils.to_human_size(size), datetime.fromtimestamp(discovered_on).strftime("%d/%m/%Y"), files)
 
@@ -283,7 +290,7 @@ def feed():
 
 
 def initialize_magneticod_db(mysql_cfg, redis_cfg) -> None:
-    global magneticod_mysql, magneticod_redis
+    global magneticod_mysql, magneticod_redis, mysql_cnf
 
     logging.info("Connecting to magneticod's database...")
 
@@ -293,6 +300,7 @@ def initialize_magneticod_db(mysql_cfg, redis_cfg) -> None:
         raise Exception('Database init fail')
 
     magneticod_mysql = MySQLdb.connect(host=mysql_cfg['host'], port=mysql_cfg['port'], user=mysql_cfg['user'], passwd=mysql_cfg['passwd'], db=mysql_cfg['db'], charset='utf8')
+    mysql_cnf = mysql_cfg
 
     logging.info("Preparing for the full-text search (this might take a while)...")
     '''
