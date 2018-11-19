@@ -25,10 +25,9 @@
 <footer>
     <div id="hottag">
         热门搜索词:
-        <a href="torrents/?search=纪录片">纪录片</a> 
-        <a href="torrents/?search=电影">电影</a> 
-        <a href="torrents/?search=视频">视频</a> 
-        <a href="torrents/?search=前任">前任3：再见前任</a> 
+        {% for tag in hot_tag %}
+            <a href="torrents/?search={{ tag }}">{{ tag }}</a> 
+        {% endfor %}
         <br />
         番茄系列:
         <a href="http://tomatow.top/novel">番茄小说阅读</a>

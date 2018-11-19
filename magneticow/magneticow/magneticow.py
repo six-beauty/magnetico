@@ -1,4 +1,5 @@
 # magneticow - Lightweight web interface for magnetico.
+
 # Copyright (C) 2017  Mert Bora ALPER <bora@boramalper.org>
 # Dedicated to Cemile Binay, in whose hands I thrived.
 #
@@ -20,6 +21,7 @@ import MySQLdb
 import os
 import redis
 import traceback
+import time
 
 import appdirs
 import flask
@@ -34,6 +36,7 @@ Torrent = collections.namedtuple("torrent", ["info_hash", "name", "size", "disco
 gfw = sensitive_filter.DFAFilter()
 gfw.parse("./magneticow/data/色情类.txt", ',')
 gfw.parse("./magneticow/data/政治类.txt", ',')
+gfw.parse("./magneticow/data/dirty.txt", ',')
 
 app = flask.Flask(__name__)
 app.config.from_object(__name__)
@@ -69,7 +72,12 @@ def home_page():
 
         #byte to int
         n_torrents = int(n_torrents)
-    return flask.render_template("homepage.html", n_torrents=n_torrents)
+
+        hot_key = 'hot_tag:%s'%(time.strftime('%W'))
+        hot_tags = magneticod_redis.zrevrange(hot_key, 0, 10)
+        hot_tags = [tag.decode('utf-8') for tag in hot_tags]
+
+    return flask.render_template("homepage.html", n_torrents=n_torrents, hot_tag=hot_tags)
 
 @app.route("/torrents/")
 @requires_auth
@@ -79,9 +87,10 @@ def torrents():
     page = int(flask.request.args.get("page", 0))
 
     #防域名屏蔽
-    #if '国产' in search or '学生' in search:
+    '''
     if 'tomatow.top' in flask.request.url:
         return flask.redirect("http://121.196.207.196:5001/torrents?search=%s&page=%s"%(search, page), 301)
+    '''
 
     context = {
         "search": search,
@@ -103,7 +112,12 @@ def torrents():
 
     SQL_query = "SELECT info_hash, name, total_size, discovered_on FROM `torrents` "
     if search:
-        SQL_query += "WHERE MATCH(`name`) AGAINST('{0}' IN BOOLEAN MODE) ".format(search)
+        key_word = search.split('+')
+        if len(key_word) > 1:
+            search = ' +'.join(key_word)
+            SQL_query += "WHERE MATCH(`name`) AGAINST('+{0}' IN BOOLEAN MODE) ".format(search)
+        else:
+            SQL_query += "WHERE MATCH(`name`) AGAINST('{0}' IN BOOLEAN MODE) ".format(search)
 
     if sort_by:
         SQL_query += "ORDER BY {0} LIMIT {1}, 20 ".format(sort_by + ", " + "`id` DESC", 20 * page)
@@ -138,6 +152,12 @@ def torrents():
     if sort_by:
         context["sorted_by"] = sort_by
 
+    if search:
+        hot_key = 'hot_tag:%s'%(time.strftime('%W'))
+        magneticod_redis.zincrby(hot_key, search)
+        #3天
+        magneticod_redis.expire(hot_key, 259200)
+
     return flask.render_template("torrents.html", **context)
 
 
@@ -152,8 +172,6 @@ def torrent_redirect(**kwargs):
         return flask.abort(400)
 
     #防域名屏蔽
-    if 'tomatow.top' in flask.request.url:
-        return flask.redirect("http://121.196.207.196:5001/torrents/%s/"%(info_hash), 301)
 
     with magneticod_mysql:
         try:
@@ -187,8 +205,6 @@ def torrent(**kwargs):
         return flask.abort(400)
 
     #防域名屏蔽
-    if 'tomatow.top' in flask.request.url:
-        return flask.redirect("http://121.196.207.196:5001/torrents/%s/%s/"%(info_hash, name), 301)
 
     with magneticod_mysql:
         try:
@@ -213,7 +229,13 @@ def torrent(**kwargs):
             return flask.abort(404)
 
         size = sum(f[1] for f in raw_files)
-        files = [File(gfw.filter(f[0]), utils.to_human_size(f[1])) for f in raw_files]
+        #files = [File(gfw.filter(f[0]), utils.to_human_size(f[1])) for f in raw_files]
+        files = []
+        for f in raw_files:
+            if '_____padding_file_' in  f[0]:
+                continue
+            gftf = File(gfw.filter(f[0]), utils.to_human_size(f[1]))
+            files.append(gftf)
 
     context["torrent"] = Torrent(info_hash, name, utils.to_human_size(size), datetime.fromtimestamp(discovered_on).strftime("%d/%m/%Y"), files)
 

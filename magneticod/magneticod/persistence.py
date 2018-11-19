@@ -19,6 +19,7 @@ import typing
 import os
 import redis
 import traceback
+import sys
 
 from magneticod import bencode
 
@@ -157,16 +158,26 @@ class Database:
 
         try:
             cur = self.__db_conn.cursor()
-            cur.execute("SELECT count(info_hash), id FROM torrents where info_hash = %s;", [info_hash])
+            cur.execute("SELECT count(info_hash), id FROM torrents where info_hash = '%s';"%info_hash)
             x, torrent_id = cur.fetchone()
             cur.close()
         except (AttributeError, MySQLdb.OperationalError):
-            logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
-            self.__db_conn.close()
-            self.__db_conn = MySQLdb.connect(host=self.host,port=self.port,user=self.user,passwd=self.passwd,db=self.db,charset="utf8")
+            logging.error('mysql connection err:%s, try reconnect:%s', AttributeError, traceback.format_exc())
+            if self.__db_conn:
+                self.__db_conn.close()
+            self.__db_conn = None
+
+            try:
+                self.__db_conn = MySQLdb.connect(host=self.host,port=self.port,user=self.user,passwd=self.passwd,db=self.db,charset="utf8")
+            except:
+                logging.error('mysql reconnect fail:%s, error:%s, process exit!', AttributeError, traceback.format_exc())
+                self.__db_conn = None
+                sys.exit(-1)
+
+            logging.error('mysql reconnect fail, ')
             return False
         except:
-            logging.error('mysql execute err:%s', traceback.format_exc())
+            logging.error('mysql execute err:%s, %s', info_hash, traceback.format_exc())
             return False
 
         #超时了，重新set 缓存
@@ -190,7 +201,9 @@ class Database:
                           len(self.__pending_metadata), len(self.__pending_files))
         except (AttributeError, MySQLdb.OperationalError):
             logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
-            self.__db_conn.close()
+            if self.__db_conn:
+                self.__db_conn.close()
+            self.__db_conn = None
             self.__db_conn = MySQLdb.connect(host=self.host,port=self.port,user=self.user,passwd=self.passwd,db=self.db,charset="utf8")
         except:
             cur.execute("ROLLBACK;")
@@ -206,4 +219,5 @@ class Database:
     def close(self) -> None:
         if self.__pending_metadata:
             self.__commit_metadata()
-        self.__db_conn.close()
+        if self.__db_conn:
+            self.__db_conn.close()

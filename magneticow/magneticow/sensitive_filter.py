@@ -2,7 +2,10 @@
 # -*- coding:utf-8 -*-
 from collections import defaultdict
 import re
-from magneticow import pinyin
+try:
+    from magneticow import pinyin
+except:
+    import pinyin
 
 class DFAFilter():
 
@@ -19,6 +22,10 @@ class DFAFilter():
     def __init__(self):
         self.keyword_chains = {}
         self.delimit = '\x00'
+
+        self.add('.com')
+        self.add('.cc')
+        self.add('.cn')
 
     def add(self, keyword):
         keyword = keyword.lower()
@@ -60,9 +67,20 @@ class DFAFilter():
                     step_ins += 1
                     if self.delimit not in level[char]:
                         level = level[char]
+                    #.com, .cn, .cc
+                    elif char_ins[:2] == '.c':
+                        #域名都转空
+                        if ret[-1].isalpha():
+                            #域名前缀也删了
+                            del ret[-1]
+
+                        start += step_ins - 1
+                        break
                     else:
                         piny = pinyin.convert_to_pinyin(char_ins)
-                        ret.append(piny)
+                        if char_ins in piny:
+                            piny = '*' * step_ins
+                        ret.append(" '"+piny+"' ")
                         start += step_ins - 1
                         break
                 else:
@@ -82,15 +100,17 @@ def test_first_character():
 
 
 if __name__ == "__main__":
-    gfw = DFAFilter()
-    gfw.parse("./data/色情类.txt", ',')
-    gfw.parse("./data/政治类.txt", ',')
     import time
     t = time.time()
-    print(gfw.filter("法轮功 我操操操"))
+    gfw = DFAFilter()
+    gfw.parse("./data/色情类.txt", ',')
+    #gfw.parse("./data/政治类.txt", ',')
+    #gfw.parse("./data/dirty.txt", ',')
+    print(time.time() - t)
+    t = time.time()
+    print(gfw.filter("甜心一晚干一次要2000真是贵，但是nèn abc.com bī 大奶都很粉嫩也是很值得 土豪狂刷了几千块礼物和极品美女主播网草高科技炮机 王三哥实力一等一看上的美女没有一个列外，今天干空姐我来拍视频分享"))
     print(gfw.filter("针孔摄像机 我操操操"))
     print(gfw.filter("售假人民币 我操操操"))
-    print(gfw.filter("传世私服 我操操操"))
     print(time.time() - t)
 
     test_first_character()

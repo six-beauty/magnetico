@@ -10,7 +10,7 @@ def convert_to_pinyin(words):
     pinyin_words = pypinyin.pinyin(words)
     pinyin = ''
     for word in pinyin_words:
-        pinyin = pinyin + word[0] + ' '
+        pinyin = pinyin + word[0]
 
     return pinyin
 
