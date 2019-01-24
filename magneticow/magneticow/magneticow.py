@@ -23,6 +23,7 @@ import redis
 import traceback
 import time
 
+import re
 import appdirs
 import flask
 
@@ -32,6 +33,7 @@ from magneticow import sensitive_filter
 
 File = collections.namedtuple("file", ["path", "size"])
 Torrent = collections.namedtuple("torrent", ["info_hash", "name", "size", "discovered_on", "files"])
+zh_pattern = re.compile('[\u4e00-\u9fa5]+')
 
 gfw = sensitive_filter.DFAFilter()
 gfw.parse("./magneticow/data/色情类.txt", ',')
@@ -74,7 +76,7 @@ def home_page():
         n_torrents = int(n_torrents)
 
         hot_key = 'hot_tag:%s'%(time.strftime('%W'))
-        hot_tags = magneticod_redis.zrevrange(hot_key, 0, 10)
+        hot_tags = magneticod_redis.zrevrange(hot_key, 0, 15)
         hot_tags = [tag.decode('utf-8') for tag in hot_tags]
 
     return flask.render_template("homepage.html", n_torrents=n_torrents, hot_tag=hot_tags)
@@ -152,7 +154,7 @@ def torrents():
     if sort_by:
         context["sorted_by"] = sort_by
 
-    if search:
+    if zh_pattern.search(search):
         hot_key = 'hot_tag:%s'%(time.strftime('%W'))
         magneticod_redis.zincrby(hot_key, search)
         #3天
@@ -262,7 +264,7 @@ def statistics():
         #     Function          Equivalent strftime()
         #     date(...) 		strftime('%Y-%m-%d', ...)
         cur = magneticod_mysql.cursor()
-        cur.execute("SELECT FROM_UNIXTIME(discovered_on, '{0}') AS day, count(`id`) FROM torrents WHERE discovered_on >= {1} GROUP BY day;".format('%Y-%m-%d', latest_today - 7 * 24 * 60 * 60, ))
+        cur.execute("SELECT FROM_UNIXTIME(discovered_on, '{0}') AS day, count(`id`) FROM torrents WHERE discovered_on >= {1} GROUP BY day;".format('%Y-%m-%d', latest_today - 30 * 24 * 60 * 60, ))
         results = cur.fetchall()  # for instance, [('2017-04-01', 17428), ('2017-04-02', 28342)]
 
     return flask.render_template("statistics.html", **{
