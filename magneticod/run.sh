@@ -1,8 +1,8 @@
-svr_port=6882
+svr_port=5005
 cur_dir=$(pwd)
 
 #run_status=$(/usr/sbin/lsof -nP -i TCP:$svr_port |grep python)
-run_status=$(ps aux |grep python |grep 6882)
+run_status=$(ps aux |grep python |grep $svr_port)
 
 if [[ ${#run_status} > 0 ]];
 then

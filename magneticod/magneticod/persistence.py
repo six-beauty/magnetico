@@ -45,6 +45,8 @@ class Database:
         self.__pending_metadata = []  # type: typing.List[typing.Tuple[bytes, str, int, int]]
         # list of tuple (info_hash, size, path)
         self.__pending_files = []  # type: typing.List[typing.Tuple[bytes, int, bytes]]
+        # 本次提交的time_stamp
+        self.__tm_year = 0
 
     @staticmethod
     def __db_connect(mysql_host, mysql_port, mysql_user, mysql_pwd, mysql_db) -> MySQLdb.Connection:
@@ -52,6 +54,28 @@ class Database:
 
         with db_conn:
             db_cur = db_conn.cursor()
+
+            #cur year
+            cur_year = time.localtime(time.time()).tm_year
+            #next year
+            next_year = cur_year+1
+
+            torrent_files_sql = '''
+                    CREATE TABLE IF NOT EXISTS `torrent_files_%s` (
+                        `id` INT(11) NOT NULL AUTO_INCREMENT,
+                        `torrent_id` INT(11) NOT NULL DEFAULT '0',
+                        `size` BIGINT(20) NOT NULL,
+                        `path` TEXT NOT NULL COLLATE 'utf8mb4_unicode_ci',
+                        PRIMARY KEY (`id`),
+                        INDEX `torrent_id_index` (`torrent_id`)
+                        )COLLATE='utf8mb4_unicode_ci' ENGINE=InnoDB;
+                    '''
+            # next year first
+            db_cur.execute(torrent_files_sql%(next_year))
+            # cur year second
+            db_cur.execute(torrent_files_sql%(cur_year))
+
+            # last, create torrents
             db_cur.execute(
                     '''
                     CREATE TABLE IF NOT EXISTS `torrents` (
@@ -62,21 +86,7 @@ class Database:
                         `name` TEXT NOT NULL COLLATE 'utf8mb4_unicode_ci',
                         PRIMARY KEY (`id`),
                         UNIQUE INDEX `info_hash` (`info_hash`),
-                        INDEX `discovered_on_index` (`discovered_on`),
-                        FULLTEXT INDEX `name_fulltext` (`name`)
-                        )COLLATE='utf8mb4_unicode_ci' ENGINE=InnoDB;
-                    '''
-                    )
-
-            db_cur.execute(
-                    '''
-                    CREATE TABLE IF NOT EXISTS `torrent_files` (
-                        `id` INT(11) NOT NULL AUTO_INCREMENT,
-                        `torrent_id` INT(11) NOT NULL DEFAULT '0',
-                        `size` BIGINT(20) NOT NULL,
-                        `path` TEXT NOT NULL COLLATE 'utf8mb4_unicode_ci',
-                        PRIMARY KEY (`id`),
-                        INDEX `torrent_id_index` (`torrent_id`)
+                        INDEX `discovered_on_index` (`discovered_on`)
                         )COLLATE='utf8mb4_unicode_ci' ENGINE=InnoDB;
                     '''
                     )
@@ -104,6 +114,7 @@ class Database:
         files = []
         info_hash = info_hash.hex()
         discovered_on = int(time.time())
+        self.__tm_year = time.localtime(discovered_on).tm_year
 
         torrent_id = self.__redis_conn.incr('torrent_id')
         torrent_id = int(torrent_id)
@@ -193,12 +204,12 @@ class Database:
                 self.__pending_metadata
             )
             cur.executemany(
-                "INSERT INTO torrent_files (torrent_id, size, path) VALUES (%s, %s, %s);",
+                "INSERT INTO torrent_files_{0} (torrent_id, size, path) VALUES (%s, %s, %s);".format(self.__tm_year),
                 self.__pending_files
             )
             cur.execute("COMMIT;")
-            logging.info("%d metadata (%d files) are committed to the database.",
-                          len(self.__pending_metadata), len(self.__pending_files))
+            logging.info("%d metadata (%d files), %s are committed to the database.",
+                          len(self.__pending_metadata), len(self.__pending_files), self.__tm_year)
         except (AttributeError, MySQLdb.OperationalError):
             logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
             if self.__db_conn:

@@ -8,7 +8,7 @@ then
     echo 'magneticow still running, '${#run_status}
     exit 0
 else
-    nohup python magn.py --cfg-file /home/sany/.local/share/magneticod/magn.cfg --no-auth --port $svr_port > /dev/null 2>&1 &
+    nohup python magn.py --cfg-file /home/hero/.local/share/magneticod/magn.cfg --no-auth --port $svr_port > /dev/null 2>&1 &
     echo 'magneticow stop('${#run_status}'), start work!'$(date +"%H:%M:%S")
 fi
 

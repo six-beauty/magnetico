@@ -114,12 +114,12 @@ def torrents():
 
     SQL_query = "SELECT info_hash, name, total_size, discovered_on FROM `torrents` "
     if search:
-        key_word = search.split('+')
+        key_word = search.split()
         if len(key_word) > 1:
-            search = ' +'.join(key_word)
-            SQL_query += "WHERE MATCH(`name`) AGAINST('+{0}' IN BOOLEAN MODE) ".format(search)
+            search = ' and '.join(["instr(`name`, '%s')>1"%(key) for key in key_word])
+            SQL_query += "WHERE {0} ".format(search)
         else:
-            SQL_query += "WHERE MATCH(`name`) AGAINST('{0}' IN BOOLEAN MODE) ".format(search)
+            SQL_query += "WHERE instr(`name`, '{0}')>1 ".format(search)
 
     if sort_by:
         SQL_query += "ORDER BY {0} LIMIT {1}, 20 ".format(sort_by + ", " + "`id` DESC", 20 * page)
@@ -223,7 +223,8 @@ def torrent(**kwargs):
             return flask.abort(404)
 
         try:
-            cur.execute("SELECT path, size FROM torrent_files WHERE torrent_id=%s;"%(torrent_id,))
+            tm_year = time.localtime(discovered_on).tm_year
+            cur.execute("SELECT path, size FROM torrent_files_%s WHERE torrent_id=%s;"%(tm_year, torrent_id,))
             raw_files = cur.fetchall()
         except (AttributeError, MySQLdb.OperationalError):
             logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
@@ -299,7 +300,7 @@ def feed():
             cur = magneticod_mysql.cursor()
             cur.execute(
                 '''
-                SELECT name, info_hash FROM torrents where match(`name`) against('{0}' in boolean mode) ORDER BY id DESC LIMIT 50;
+                SELECT name, info_hash FROM torrents where instr(name, {0})>1 ORDER BY id DESC LIMIT 50;
                 '''.format(filter_, )
             )
             context["items"] = [{"title": r[0], "info_hash": r[1]} for r in cur]
