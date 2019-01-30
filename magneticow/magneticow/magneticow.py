@@ -156,7 +156,6 @@ def torrents():
 
     if zh_pattern.search(search):
         hot_key = 'hot_tag:%s'%(time.strftime('%W'))
-        key_word = search.split()
         for word in key_word:
             magneticod_redis.zincrby(hot_key, word)
             #3天
