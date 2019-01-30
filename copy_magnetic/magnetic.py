@@ -35,9 +35,9 @@ if __name__=='__main__':
     #reset
     #__redis_conn.set(limit_num, 0)
 
-    pydb = pymysql.connect(host='121.196.207.196', port=3306, user='sany', password='kelyn@2017', database='magnetic')
+    pydb = pymysql.connect(host='121.196.207.196', port=3306, user='sany', password='123', database='magnetic')
     step = 10
-    pydb2 = pymysql.connect(host='127.0.0.1', port=3306, user='sany', password='kelyn@2017', database='magnetic')
+    pydb2 = pymysql.connect(host='127.0.0.1', port=3306, user='sany', password='123', database='magnetic')
     cursor = pydb.cursor()
     cursor2 = pydb2.cursor()
 
