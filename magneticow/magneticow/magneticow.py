@@ -156,9 +156,11 @@ def torrents():
 
     if zh_pattern.search(search):
         hot_key = 'hot_tag:%s'%(time.strftime('%W'))
-        magneticod_redis.zincrby(hot_key, search)
-        #3天
-        magneticod_redis.expire(hot_key, 259200)
+        key_word = search.split()
+        for word in key_word:
+            magneticod_redis.zincrby(hot_key, word)
+            #3天
+            magneticod_redis.expire(hot_key, 259200)
 
     return flask.render_template("torrents.html", **context)
 
@@ -223,8 +225,8 @@ def torrent(**kwargs):
             return flask.abort(404)
 
         try:
-            tm_year = time.localtime(discovered_on).tm_year
-            cur.execute("SELECT path, size FROM torrent_files_%s WHERE torrent_id=%s;"%(tm_year, torrent_id,))
+            __tm_year = time.localtime(discovered_on).tm_year
+            cur.execute("SELECT path, size FROM torrent_files_%s WHERE torrent_id=%s;"%(__tm_year, torrent_id,))
             raw_files = cur.fetchall()
         except (AttributeError, MySQLdb.OperationalError):
             logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
