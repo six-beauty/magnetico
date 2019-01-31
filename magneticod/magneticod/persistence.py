@@ -20,10 +20,12 @@ import os
 import redis
 import traceback
 import sys
+import re
 
 from magneticod import bencode
-
 from .constants import PENDING_INFO_HASHES
+
+zh_pattern = re.compile('[\u4E00-\u9FA5]+')
 
 def gen_tb_timestamp():
     return time.strftime('%Y%m', time.localtime())
@@ -42,9 +44,9 @@ class Database:
 
         # We buffer metadata to flush many entries at once, for performance reasons.
         # list of tuple (info_hash, name, total_size, discovered_on)
-        self.__pending_metadata = []  # type: typing.List[typing.Tuple[bytes, str, int, int]]
+        self.__pending_metadata = {}  # type: {__lr: typing.List[typing.Tuple[bytes, str, int, int]]}
         # list of tuple (info_hash, size, path)
-        self.__pending_files = []  # type: typing.List[typing.Tuple[bytes, int, bytes]]
+        self.__pending_files = {}  # type: {{(__lr, __tm_year): typing.List[typing.Tuple[bytes, int, bytes]]}
         # 本次提交的time_stamp
         self.__tm_year = 0
 
@@ -61,7 +63,7 @@ class Database:
             next_year = cur_year+1
 
             torrent_files_sql = '''
-                    CREATE TABLE IF NOT EXISTS `torrent_files_%s` (
+                    CREATE TABLE IF NOT EXISTS `{0}_torrent_files_{1}` (
                         `id` INT(11) NOT NULL AUTO_INCREMENT,
                         `torrent_id` INT(11) NOT NULL DEFAULT '0',
                         `size` BIGINT(20) NOT NULL,
@@ -70,15 +72,9 @@ class Database:
                         INDEX `torrent_id_index` (`torrent_id`)
                         )COLLATE='utf8mb4_unicode_ci' ENGINE=InnoDB;
                     '''
-            # next year first
-            db_cur.execute(torrent_files_sql%(next_year))
-            # cur year second
-            db_cur.execute(torrent_files_sql%(cur_year))
 
-            # last, create torrents
-            db_cur.execute(
-                    '''
-                    CREATE TABLE IF NOT EXISTS `torrents` (
+            torrents_sql = '''
+                    CREATE TABLE IF NOT EXISTS `{0}_torrents` (
                         `id` INT(11) NOT NULL AUTO_INCREMENT,
                         `info_hash` VARCHAR(64) NOT NULL COLLATE 'utf8mb4_unicode_ci',
                         `discovered_on` INT(11) NOT NULL DEFAULT '0',
@@ -89,7 +85,17 @@ class Database:
                         INDEX `discovered_on_index` (`discovered_on`)
                         )COLLATE='utf8mb4_unicode_ci' ENGINE=InnoDB;
                     '''
-                    )
+
+            # 中英文分服
+            for lr in ('zh', 'en'):
+                # next year first
+                db_cur.execute(torrent_files_sql.format(lr, next_year))
+                # cur year second
+                db_cur.execute(torrent_files_sql.format(lr, cur_year))
+
+                # last, create torrents
+                db_cur.execute(torrents_sql.format(lr))
+
             db_conn.commit()
 
         return db_conn
@@ -101,20 +107,20 @@ class Database:
         torrent_init = redis_conn.exists('torrent_id')
         if torrent_init == 0:
             #redis数据可能被清空，从数据库读出，重新写入
-            cur = self.__db_conn.cursor()
-            cur.execute('SELECT id from torrents order by id desc limit 1;')
-            res = cur.fetchone()
-            if res:
-                torrent_id = res[0] 
-                #set redis torrent_id
-                redis_conn.set('torrent_id', torrent_id)
+            torrent_id = 0
+            for __lr in ('zh', 'en'):
+                cur = self.__db_conn.cursor()
+                cur.execute('SELECT id from {0}_torrents order by id desc limit 1;'.format(__lr))
+                res = cur.fetchone()
+                if res and torrent_id < res[0]:
+                    torrent_id = res[0] 
+                    #set redis torrent_id
+            redis_conn.set('torrent_id', torrent_id)
         return redis_conn
 
     def add_metadata(self, info_hash: bytes, metadata: bytes) -> bool:
         files = []
         info_hash = info_hash.hex()
-        discovered_on = int(time.time())
-        self.__tm_year = time.localtime(discovered_on).tm_year
 
         torrent_id = self.__redis_conn.incr('torrent_id')
         torrent_id = int(torrent_id)
@@ -143,23 +149,33 @@ class Database:
             logging.error('add_metadata exception, %s', traceback.format_exc())
             return False
 
-        self.__pending_metadata.append((torrent_id, info_hash, sum(f[1] for f in files), discovered_on, name))
+        # time stamp
+        discovered_on = int(time.time())
+        __tm_year = time.localtime(discovered_on).tm_year
+        # 中英文区分
+        __lr = 'zh' if zh_pattern.match(name) else 'en'
+        print('--__lr :', __lr)
+
+        self.__pending_metadata.setdefault(__lr, [])
+        self.__pending_metadata[__lr].append((torrent_id, info_hash, sum(f[1] for f in files), discovered_on, name))
         # MYPY BUG: error: Argument 1 to "__iadd__" of "list" has incompatible type List[Tuple[bytes, Any, str]];
         #     expected Iterable[Tuple[bytes, int, bytes]]
         # List is an Iterable man...
-        self.__pending_files += files  # type: ignore
+        __lr_key = (__lr, __tm_year)
+        self.__pending_files.setdefault(__lr_key, [])
+        self.__pending_files[__lr_key] += files  # type: ignore
 
         logging.info("Added: `%s`, info_hash:%s", name, info_hash)
 
         # Automatically check if the buffer is full, and commit to the SQLite database if so.
-        if len(self.__pending_metadata) >= PENDING_INFO_HASHES:
+        if sum([len(x) for x in self.__pending_metadata.values()]) >= PENDING_INFO_HASHES:
             self.__commit_metadata()
 
         return True
 
     def is_infohash_new(self, info_hash: bytes):
         info_hash = info_hash.hex()
-        if info_hash in [x[1] for x in self.__pending_metadata]:
+        if info_hash in [x[1] for lr_list in self.__pending_metadata.values() for x in lr_list]:
             return False
 
         #redis缓存
@@ -169,8 +185,13 @@ class Database:
 
         try:
             cur = self.__db_conn.cursor()
-            cur.execute("SELECT count(info_hash), id FROM torrents where info_hash = '%s';"%info_hash)
-            x, torrent_id = cur.fetchone()
+            # en 比较多
+            for __lr in ('en', 'zh'):
+                cur.execute("SELECT count(info_hash), id FROM {0}_torrents where info_hash = '{1}';".format(__lr, info_hash))
+                x, torrent_id = cur.fetchone()
+                # 找到一个就可以停了
+                if x or torrent_id:
+                    break
             cur.close()
         except (AttributeError, MySQLdb.OperationalError):
             logging.error('mysql connection err:%s, try reconnect:%s', AttributeError, traceback.format_exc())
@@ -199,17 +220,21 @@ class Database:
         # noinspection PyBroadException
         cur = self.__db_conn.cursor()
         try:
-            cur.executemany(
-                "INSERT INTO torrents (id, info_hash, total_size, discovered_on, name) VALUES (%s, %s, %s, %s, %s);",
-                self.__pending_metadata
-            )
-            cur.executemany(
-                "INSERT INTO torrent_files_{0} (torrent_id, size, path) VALUES (%s, %s, %s);".format(self.__tm_year),
-                self.__pending_files
-            )
+            for __lr, __pending_metadata in self.__pending_metadata.items():
+                print('==insert:', __lr)
+                print(__pending_metadata)
+                cur.executemany(
+                    "INSERT INTO {0}_torrents (id, info_hash, total_size, discovered_on, name) VALUES (%s, %s, %s, %s, %s);".format(__lr),
+                    __pending_metadata
+                )
+            for (__lr,__tm_year), __pending_files in self.__pending_files.items():
+                print('==insert2:', __lr)
+                cur.executemany(
+                    "INSERT INTO {0}_torrent_files_{1} (torrent_id, size, path) VALUES (%s, %s, %s);".format(__lr, __tm_year),
+                    __pending_files
+                )
             cur.execute("COMMIT;")
-            logging.info("%d metadata (%d files), %s are committed to the database.",
-                          len(self.__pending_metadata), len(self.__pending_files), self.__tm_year)
+            logging.info("%d metadata, %s are committed to the database.", sum([len(x) for x in self.__pending_metadata.values()]), __tm_year)
         except (AttributeError, MySQLdb.OperationalError):
             logging.error('mysql connection err, try reconnect:%s', traceback.format_exc())
             if self.__db_conn:
@@ -219,7 +244,7 @@ class Database:
         except:
             cur.execute("ROLLBACK;")
             logging.exception("Could NOT commit metadata to the database! (%d metadata are pending)",
-                              len(self.__pending_metadata))
+                              sum([len(x) for x in self.__pending_metadata.values()]) )
         finally:
             #fail, clear metadata
             self.__pending_metadata.clear()

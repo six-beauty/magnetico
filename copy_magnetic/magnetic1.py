@@ -25,6 +25,8 @@ if __name__=='__main__':
 
     __redis_conn = redis.StrictRedis(host='127.0.0.1', port=52022, password='sany')
 
+    #数据库密码
+    passwd = ''
     pydb = pymysql.connect(host='121.196.207.196', port=3306, user='sany', password=passwd, database='magnetic')
     step = 10
     cursor = pydb.cursor()
@@ -44,7 +46,7 @@ if __name__=='__main__':
         else:
             pass
 
-        cursor2.execute("select id, info_hash from torrents where info_hash = '%s';"%info_hash)
+        cursor2.execute("select id, info_hash from zh_torrents where info_hash = '%s';"%info_hash)
         if cursor2.fetchall():
             #数据库已经有了
             continue
