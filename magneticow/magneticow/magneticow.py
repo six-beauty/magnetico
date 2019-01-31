@@ -33,7 +33,8 @@ from magneticow import sensitive_filter
 
 File = collections.namedtuple("file", ["path", "size"])
 Torrent = collections.namedtuple("torrent", ["info_hash", "name", "size", "discovered_on", "files"])
-zh_pattern = re.compile('[\u4e00-\u9fa5]+')
+zh_pattern = re.compile('[\u4E00-\u9FA5]+')
+zh_subtract = re.compile('[<>《》！*(^)$%~!@#$…&%￥—+=、。，；‘’“”：·`]+')
 
 gfw = sensitive_filter.DFAFilter()
 gfw.parse("./magneticow/data/色情类.txt", ',')
@@ -91,7 +92,7 @@ def torrents():
     #防域名屏蔽
     '''
     if 'tomatow.top' in flask.request.url:
-        return flask.redirect("http://121.196.207.196:5001/torrents?search=%s&page=%s"%(search, page), 301)
+        return flask.redirect("http://47.98.177.0:5001/torrents?search=%s&page=%s"%(search, page), 301)
     '''
 
     context = {
@@ -116,8 +117,8 @@ def torrents():
     if search:
         key_word = search.split()
         if len(key_word) > 1:
-            search = ' and '.join(["instr(`name`, '%s')>1"%(key) for key in key_word])
-            SQL_query += "WHERE {0} ".format(search)
+            instr_search = ' and '.join(["instr(`name`, '%s')>1"%(key) for key in key_word])
+            SQL_query += "WHERE {0} ".format(instr_search)
         else:
             SQL_query += "WHERE instr(`name`, '{0}')>1 ".format(search)
 
@@ -154,12 +155,13 @@ def torrents():
     if sort_by:
         context["sorted_by"] = sort_by
 
-    if zh_pattern.search(search):
+    # 去掉特殊字符
+    search_sub = zh_subtract.sub(r'', search)
+    if search_sub:
         hot_key = 'hot_tag:%s'%(time.strftime('%W'))
-        for word in key_word:
-            magneticod_redis.zincrby(hot_key, word)
-            #3天
-            magneticod_redis.expire(hot_key, 259200)
+        magneticod_redis.zincrby(hot_key, search_sub)
+        #3天
+        magneticod_redis.expire(hot_key, 259200)
 
     return flask.render_template("torrents.html", **context)
 

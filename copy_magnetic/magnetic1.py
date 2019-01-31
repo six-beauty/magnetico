@@ -25,7 +25,7 @@ if __name__=='__main__':
 
     __redis_conn = redis.StrictRedis(host='127.0.0.1', port=52022, password='sany')
 
-    pydb = pymysql.connect(host='121.196.207.196', port=3306, user='sany', password='kelyn@2017', database='magnetic')
+    pydb = pymysql.connect(host='121.196.207.196', port=3306, user='sany', password=passwd, database='magnetic')
     step = 10
     cursor = pydb.cursor()
 
@@ -33,7 +33,7 @@ if __name__=='__main__':
     cursor.execute(sql)
     torrents = cursor.fetchall()
 
-    pydb2 = pymysql.connect(host='127.0.0.1', port=3306, user='sany', password='kelyn@2017', database='magnetic')
+    pydb2 = pymysql.connect(host='127.0.0.1', port=3306, user='sany', password=passwd, database='magnetic')
     cursor2 = pydb2.cursor()
 
     for torrent in torrents:
