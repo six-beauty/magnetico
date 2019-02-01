@@ -16,7 +16,7 @@
 <body>
 <main>
     <div><b>tomato<sup>w</sup></b>&#8203;<sub>(pre-alpha)</sub></div>
-    <form action="/torrents" method="get" autocomplete="off" role="search">
+    <form action="/torrents?lr={{ "zh" if not _lr or _lr == 'zh' else "en" }}" method="get" autocomplete="off" role="search">
         <input type="search" name="search" placeholder="输入关键字, 按回车搜索磁力链接" autofocus>
     </form>
 </main>
@@ -26,15 +26,19 @@
     <div id="hottag">
         热门搜索词:
         {% for tag in hot_tag %}
-            <a href="torrents/?search={{ tag }}">{{ tag }}</a> 
+        <a href="/torrents?search={{ tag }}&lr={{ "zh" if not _lr or _lr == 'zh' else "en" }}">{{ tag }}</a> 
         {% endfor %}
         <br />
         番茄系列:
-        <a href="http://tomatow.top/novel">番茄小说阅读</a>
+        <a href="http://tomatow.top/novel">番茄小说阅读    </a> 
+        <br />
+        中英搜索切换:           
+        <a  style="float:right"  href="/search?lr={{ "en" if not _lr or _lr == 'zh' else "zh" }}">
+            <span class="glyphicon glyphicon-transfer"></span>切换: {{ "en" if not _lr or _lr == 'zh' else "zh" }}
+        </a>
         <br />
     </div>
-
-    ~{{ "{:,}".format(n_torrents) }} torrents available (see the <a href="/statistics">statistics</a>).
+    ~{{ "{:,}".format(n_torrents) }} torrents available (see the <a href="/statistics}}">statistics</a>).
 </footer>
 </body>
 </html>

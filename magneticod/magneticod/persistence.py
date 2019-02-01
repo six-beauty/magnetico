@@ -153,8 +153,7 @@ class Database:
         discovered_on = int(time.time())
         __tm_year = time.localtime(discovered_on).tm_year
         # 中英文区分
-        __lr = 'zh' if zh_pattern.match(name) else 'en'
-        print('--__lr :', __lr)
+        __lr = 'zh' if zh_pattern.search(name) else 'en'
 
         self.__pending_metadata.setdefault(__lr, [])
         self.__pending_metadata[__lr].append((torrent_id, info_hash, sum(f[1] for f in files), discovered_on, name))
@@ -165,7 +164,7 @@ class Database:
         self.__pending_files.setdefault(__lr_key, [])
         self.__pending_files[__lr_key] += files  # type: ignore
 
-        logging.info("Added: `%s`, info_hash:%s", name, info_hash)
+        logging.info("Added: %s: `%s`, info_hash:%s", __lr, name, info_hash)
 
         # Automatically check if the buffer is full, and commit to the SQLite database if so.
         if sum([len(x) for x in self.__pending_metadata.values()]) >= PENDING_INFO_HASHES:
@@ -221,14 +220,11 @@ class Database:
         cur = self.__db_conn.cursor()
         try:
             for __lr, __pending_metadata in self.__pending_metadata.items():
-                print('==insert:', __lr)
-                print(__pending_metadata)
                 cur.executemany(
                     "INSERT INTO {0}_torrents (id, info_hash, total_size, discovered_on, name) VALUES (%s, %s, %s, %s, %s);".format(__lr),
                     __pending_metadata
                 )
             for (__lr,__tm_year), __pending_files in self.__pending_files.items():
-                print('==insert2:', __lr)
                 cur.executemany(
                     "INSERT INTO {0}_torrent_files_{1} (torrent_id, size, path) VALUES (%s, %s, %s);".format(__lr, __tm_year),
                     __pending_files

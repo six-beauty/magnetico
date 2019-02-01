@@ -8,10 +8,11 @@
     <link rel="stylesheet" href=" {{ url_for('static', filename='styles/torrents.css') }} ">
     <!-- <script src="script.js"></script> -->
 </head>
+
 <body>
 <header>
-    <div><a href="/"><b>tomato<sup>w</sup></b></a>&#8203;<sub>(pre-alpha)</sub></div>
-    <form action="/torrents" method="get" autocomplete="off" role="search">
+    <div><a href="/search?lr={{ "zh" if not _lr else _lr }}"><b>tomato<sup>w</sup></b></a>&#8203;<sub>(pre-alpha)</sub></div>
+    <form action="/torrents?&lr={{ "zh" if not _lr else _lr }}" method="get" autocomplete="off" role="search">
         <input type="search" name="search" placeholder="Search the BitTorrent DHT" value="{{ search }}">
     </form>
     <div>
@@ -26,29 +27,29 @@
                 <th><!-- Magnet link --></th>
                 <th>
                 {% if sorted_by == "name ASC" %}
-                    <a href="/torrents/?search={{ search }}&sort_by=name+DESC">Name ▲</a>
+                    <a href="/torrents/?search={{ search }}&sort_by=name+DESC&lr={{ "zh" if not _lr else _lr }}">Name ▲</a>
                 {% elif sorted_by == "name DESC" %}
-                    <a href="/torrents/?search={{ search }}&sort_by=name+ASC">Name ▼</a>
+                    <a href="/torrents/?search={{ search }}&sort_by=name+ASC&lr={{ "zh" if not _lr else _lr }}">Name ▼</a>
                 {% else %}
-                    <a href="/torrents/?search={{ search }}&sort_by=name+ASC">Name</a>
+                    <a href="/torrents/?search={{ search }}&sort_by=name+ASC&lr={{ "zh" if not _lr else _lr }}">Name</a>
                 {% endif %}
                 </th>
                 <th>
                 {% if sorted_by == "total_size ASC" %}
-                    <a href="/torrents/?search={{ search }}&sort_by=total_size+DESC">Size ▲</a>
+                    <a href="/torrents/?search={{ search }}&sort_by=total_size+DESC&lr={{ "zh" if not _lr else _lr }}">Size ▲</a>
                 {% elif sorted_by == "total_size DESC" %}
-                    <a href="/torrents/?search={{ search }}&sort_by=total_size+ASC">Size ▼</a>
+                    <a href="/torrents/?search={{ search }}&sort_by=total_size+ASC&lr={{ "zh" if not _lr else _lr }}">Size ▼</a>
                 {% else %}
-                    <a href="/torrents/?search={{ search }}&sort_by=total_size+ASC">Size</a>
+                    <a href="/torrents/?search={{ search }}&sort_by=total_size+ASC&lr={{ "zh" if not _lr else _lr }}">Size</a>
                 {% endif %}
                 </th>
                 <th>
                 {% if sorted_by == "discovered_on ASC" %}
-                    <a href="/torrents/?search={{ search }}&sort_by=discovered_on+DESC">Discovered on ▲</a>
+                    <a href="/torrents/?search={{ search }}&sort_by=discovered_on+DESC&lr={{ "zh" if not _lr else _lr }}">Discovered on ▲</a>
                 {% elif sorted_by == "discovered_on DESC" %}
-                    <a href="/torrents/?search={{ search }}&sort_by=discovered_on+ASC">Discovered on ▼</a>
+                    <a href="/torrents/?search={{ search }}&sort_by=discovered_on+ASC&lr={{ "zh" if not _lr else _lr }}">Discovered on ▼</a>
                 {% else %}
-                    <a href="/torrents/?search={{ search }}&sort_by=discovered_on+DESC">Discovered on</a>
+                    <a href="/torrents/?search={{ search }}&sort_by=discovered_on+DESC&lr={{ "zh" if not _lr else _lr }}">Discovered on</a>
                 {% endif %}
                 </th>
             </tr>
@@ -59,7 +60,7 @@
                 <td><a href="magnet:?xt=urn:btih:{{ torrent.info_hash }}&dn={{ torrent.name }}">
                     <img src="{{ url_for('static', filename='assets/magnet.gif') }}" alt="Magnet link"
                          title="Download this torrent using magnet" /></a></td>
-                <td><a href="/torrents/{{ torrent.info_hash }}/{{ torrent.name }}">{{ torrent.name }}</a></td>
+                <td><a href="/torrents/{{ torrent.info_hash }}/{{ torrent.name }}?lr={{ "zh" if not _lr else _lr }}">{{ torrent.name }}</a></td>
                 <td>{{ torrent.size }}</td>
                 <td>{{ torrent.discovered_on }}</td>
             </tr>
@@ -76,6 +77,7 @@
         <input type="text" name="sort_by" value="{{ sorted_by }}" hidden>
     {% endif %}
         <input type="number" name="page" value="{{ page - 1 }}" hidden>
+        <input type="text" name="lr" value="{{ 'zh' if not _lr else _lr }}" hidden>
     </form>
     <form action="/torrents" method="get">
         <button {% if not next_page_exists %}disabled{% endif %}>Next</button>
@@ -84,6 +86,7 @@
         <input type="text" name="sort_by" value="{{ sorted_by }}" hidden>
     {% endif %}
         <input type="number" name="page" value="{{ page + 1 }}" hidden>
+        <input type="text" name="lr" value="{{ 'zh' if not _lr else _lr }}" hidden>
     </form>
 </footer>
 </body>

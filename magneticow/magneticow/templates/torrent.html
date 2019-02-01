@@ -10,8 +10,8 @@
 </head>
 <body>
 <header>
-    <div><a href="/"><b>tomato<sup>w</sup></b></a>&#8203;<sub>(pre-alpha)</sub></div>
-    <form action="/torrents" method="get" autocomplete="off" role="search">
+    <div><a href="/search?lr={{ torrent._lr }}"><b>tomato<sup>w</sup></b></a>&#8203;<sub>(pre-alpha)</sub></div>
+    <form action="/torrents?lr={{ 'zh' if not torrent._lr else torrent._lr }}" method="get" autocomplete="off" role="search">
         <input type="search" name="search" placeholder="Search the BitTorrent DHT">
     </form>
 </header>
