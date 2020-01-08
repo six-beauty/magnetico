@@ -33,8 +33,9 @@ from magneticow import sensitive_filter
 
 File = collections.namedtuple("file", ["path", "size"])
 Torrent = collections.namedtuple("torrent", ["info_hash", "name", "size", "discovered_on", "files"])
-zh_pattern = re.compile('[\u4E00-\u9FA5]+')
+zh_pattern = re.compile('[^\u4E00-\u9FA5]+')
 zh_subtract = re.compile('[<>《》！*(^)$%~!@#$…&%￥—+=、。，；‘’“”：·`]+')
+zh_subtract2= re.compile('[^\u4E00-\u9FA5a-zA-Z0-9]+')
 
 gfw = sensitive_filter.DFAFilter()
 gfw.parse("./magneticow/data/色情类.txt", ',')
@@ -163,8 +164,8 @@ def torrents():
         context["sorted_by"] = sort_by
 
     # 去掉特殊字符
-    search_sub = zh_subtract.sub(r'', search)
-    if search_sub:
+    search_sub = zh_subtract2.sub(r'', search)
+    if search_sub and (len(search_sub)>4 or len(zh_pattern.sub(r'', search))>2 ):
         hot_key = 'hot_tag:%s'%(time.strftime('%W'))
         magneticod_redis.zincrby(hot_key, search_sub)
         #3天

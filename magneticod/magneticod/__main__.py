@@ -111,7 +111,7 @@ def magn_cfg(cfg_file) -> typing.Optional[dict]:
     if not os.path.isfile(cfg_file):
         cfg = {}
         cfg['mysql'] = {"host":"127.0.0.1", "port":3306, "user":'root', "passwd":'123456', "db":"magnetic"}
-        cfg['redis'] = {"host":"127.0.0.1", "port":52021, "passwd":'sany'}
+        cfg['redis'] = {"host":"127.0.0.1", "port":52022, "passwd":'sany'}
         h_cfg = open(cfg_file, 'w')
         h_cfg.write(json.dumps(cfg, sort_keys=True, indent=4))
         h_cfg.close()

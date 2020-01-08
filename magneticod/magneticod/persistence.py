@@ -132,14 +132,21 @@ class Database:
             info = bencode.loads(metadata)
 
             assert b"/" not in info[b"name"]
-            name = info[b"name"].decode('utf-8')
+            try:
+                name = info[b"name"].decode('utf-8')
+            except:
+                name = info[b"name"].decode('unicode_escape')
 
             if b"files" in info:  # Multiple File torrent:
                 for file in info[b"files"]:
                     assert type(file[b"length"]) is int
                     # Refuse trailing slash in any of the path items
                     assert not any(b"/" in item for item in file[b"path"])
-                    path = "/".join(i.decode("utf-8") for i in file[b"path"])
+                    try:
+                        path = "/".join(i.decode("utf-8") for i in file[b"path"])
+                    except:
+                        path = "/".join(i.decode("unicode_escape") for i in file[b"path"])
+
                     files.append((torrent_id, file[b"length"], path))
             else:  # Single File torrent:
                 assert type(info[b"length"]) is int

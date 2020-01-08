@@ -56,9 +56,10 @@ class DFAFilter():
 
     def filter(self, message):
         message = message.lower()
+        msg_len = len(message)
         ret = []
         start = 0
-        while start < len(message):
+        while start < msg_len:
             level = self.keyword_chains
             step_ins, char_ins = 0, ''
             for char in message[start:]:
@@ -70,24 +71,34 @@ class DFAFilter():
                     #.com, .cn, .cc
                     elif char_ins[:2] == '.c':
                         #域名都转空
-                        if ret[-1].isalpha():
+                        while ret and 'a' <= ret[-1] <='z':
                             #域名前缀也删了
                             del ret[-1]
 
                         start += step_ins - 1
                         break
                     else:
-                        piny = pinyin.convert_to_pinyin(char_ins)
+                        # 转拼音版本2
+                        piny = pinyin.convert_to_lazy_pinyin_last(char_ins)
                         if char_ins in piny:
                             piny = '*' * step_ins
                         ret.append(" '"+piny+"' ")
                         start += step_ins - 1
                         break
-                else:
+
+                        '''
+                        # 用','分隔
+                        piny = ','.join(char_ins)
+                        ret.append(" '"+piny+"' ")
+                        start += step_ins 
+                        break
+                        '''
+                elif start < msg_len:
                     ret.append(message[start])
                     break
             else:
-                ret.append(message[start])
+                if start < msg_len:
+                    ret.append(message[start])
             start += 1
 
         return ''.join(ret)
@@ -105,12 +116,13 @@ if __name__ == "__main__":
     gfw = DFAFilter()
     gfw.parse("./data/色情类.txt", ',')
     #gfw.parse("./data/政治类.txt", ',')
-    #gfw.parse("./data/dirty.txt", ',')
+    gfw.parse("./data/dirty.txt", ',')
     print(time.time() - t)
     t = time.time()
-    print(gfw.filter("甜心一晚干一次要2000真是贵，但是nèn abc.com bī 大奶都很粉嫩也是很值得 土豪狂刷了几千块礼物和极品美女主播网草高科技炮机 王三哥实力一等一看上的美女没有一个列外，今天干空姐我来拍视频分享"))
-    print(gfw.filter("针孔摄像机 我操操操"))
-    print(gfw.filter("售假人民币 我操操操"))
+    print(gfw.filter("甜心一晚干一次要2000真是贵，但是nènbī 大奶都很粉嫩也是很值得 土豪狂刷了几千块礼物和极品美女主播网草高科技炮机 王三哥实力一等一看上的美女没有一个列外，今天干空姐我来拍视频分享"))
+    print(gfw.filter("针孔abc.com摄像机 我操操草一下操我们少女子少女"))
+    print(gfw.filter("土豪高级酒店包夜操性感黑丝吊带美女大奶细腰翘臀这身材太诱人了.zip"))
+    print(gfw.filter("苗条美少女自拍"))
     print(time.time() - t)
 
-    test_first_character()
+    #test_first_character()
