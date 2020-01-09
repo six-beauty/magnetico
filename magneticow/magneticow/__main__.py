@@ -24,7 +24,7 @@ import appdirs
 import humanfriendly
 import json
 
-import gevent.wsgi
+import gevent.pywsgi
 
 from magneticow import magneticow
 
@@ -81,7 +81,7 @@ def main() -> int:
     magneticow.app.arguments = arguments
     magneticow.app.logger.addHandler(htimed)
 
-    http_server = gevent.wsgi.WSGIServer((arguments.host, arguments.port), magneticow.app, log=magneticow.app.logger)
+    http_server = gevent.pywsgi.WSGIServer((arguments.host, arguments.port), magneticow.app, log=magneticow.app.logger)
 
     magneticow.initialize_magneticod_db(cfg_args['mysql'], cfg_args['redis'])
 

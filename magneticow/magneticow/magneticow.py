@@ -58,7 +58,7 @@ def home_page():
     global magneticod_mysql, magneticod_redis, mysql_cnf
     _lr = flask.request.args.get("lr", 'zh')
 
-    with magneticod_mysql:
+    if magneticod_mysql:
         #缓存 homepage torrents 总行数
         torrent_id= magneticod_redis.get('torrent_id') or 0
         torrent_id = int(torrent_id)
@@ -69,7 +69,7 @@ def home_page():
                 cur = magneticod_mysql.cursor()
 
                 for __lr in ('zh', 'en'):
-                    cur = self.__db_conn.cursor()
+                    #cur = self.__db_conn.cursor()
                     cur.execute('SELECT MAX(`id`) from {0}_torrents;'.format(__lr))
                     res = cur.fetchone()
                     if res and torrent_id < res[0]:
@@ -135,7 +135,7 @@ def torrents():
     else:
         SQL_query += "ORDER BY {0} LIMIT {1}, 20 ".format("`id` DESC", 20 * page)
 
-    with magneticod_mysql:
+    if magneticod_mysql:
         try:
             cur = magneticod_mysql.cursor()
             cur.execute(SQL_query)
@@ -167,7 +167,7 @@ def torrents():
     search_sub = zh_subtract2.sub(r'', search)
     if search_sub and (len(search_sub)>4 or len(zh_pattern.sub(r'', search))>2 ):
         hot_key = 'hot_tag:%s'%(time.strftime('%W'))
-        magneticod_redis.zincrby(hot_key, search_sub)
+        magneticod_redis.zincrby(hot_key, 1, search_sub)
         #3天
         magneticod_redis.expire(hot_key, 259200)
 
@@ -189,7 +189,7 @@ def torrent_redirect(**kwargs):
 
     #防域名屏蔽
 
-    with magneticod_mysql:
+    if magneticod_mysql:
         try:
             cur = magneticod_mysql.cursor()
             cur.execute("SELECT name FROM {0}_torrents WHERE info_hash='{1}' LIMIT 1;".format(_lr, info_hash,))
@@ -223,7 +223,7 @@ def torrent(**kwargs):
 
     #防域名屏蔽
 
-    with magneticod_mysql:
+    if magneticod_mysql:
         try:
             cur = magneticod_mysql.cursor()
             cur.execute("SELECT id, name, discovered_on FROM %s_torrents WHERE info_hash='%s' LIMIT 1;"%(_lr, info_hash,))
@@ -273,7 +273,7 @@ def statistics():
 
     global magneticod_mysql, magneticod_redis
 
-    with magneticod_mysql:
+    if magneticod_mysql:
         # latest_today is the latest UNIX timestamp of today, the very last second.
         latest_today = int((dt.date.today() + dt.timedelta(days=1) - dt.timedelta(seconds=1)).strftime("%s"))
         # Retrieve all the torrents discovered in the past 30 days (30 days * 24 hours * 60 minutes * 60 seconds...)
@@ -319,7 +319,7 @@ def feed():
 
     if filter_:
         context["title"] = "`%s` - magneticow" % (filter_,)
-        with magneticod_mysql:
+        if magneticod_mysql:
             cur = magneticod_mysql.cursor()
             cur.execute(
                 '''
@@ -329,7 +329,7 @@ def feed():
             context["items"] = [{"title": r[0], "info_hash": r[1]} for r in cur]
     else:
         context["title"] = "The Newest Torrents - magneticow"
-        with magneticod_mysql:
+        if magneticod_mysql:
             cur = magneticod_mysql.cursor()
             cur.execute('SELECT name, info_hash FROM {0}_torrents ORDER BY `id` DESC LIMIT 50;'.format(_lr))
             context["items"] = [{"title": r[0], "info_hash": r[1]} for r in cur]
@@ -352,7 +352,7 @@ def initialize_magneticod_db(mysql_cfg, redis_cfg) -> None:
 
     logging.info("Preparing for the full-text search (this might take a while)...")
     '''
-    with magneticod_mysql:
+    if magneticod_mysql:
 
         magneticod_mysql.execute("CREATE VIRTUAL TABLE temp.fts_torrents USING fts4(name);")
         magneticod_mysql.execute("INSERT INTO fts_torrents (docid, name) SELECT id, name FROM torrents;")
